@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build / cache
+.turbo/
+**/.turbo/
+dist/
+build/
+out/
+.next/
+*.tsbuildinfo
+
+# Env (manter .env.example no git)
+.env
+.env.*
+!.env.example
+!.env.local.example
+/apps/api/.env
+/apps/webmail/.env
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# OS & editors
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+*.swo
+*~
+
+.vercel/

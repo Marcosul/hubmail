@@ -1,0 +1,7 @@
+# Redundante com a raiz do monorepo; útil ao abrir só esta pasta no IDE
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.tsbuildinfo

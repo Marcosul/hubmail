@@ -63,6 +63,8 @@ Tabela (preencha as URLs reais e os IDs do WebHook após criar no painel):
 
 ### `hubmail.to`
 
+**DNS publico (receber email):** na zona `hubmail.to`, e obrigatorio um registo **MX** na raiz (`@`) para `mail.hubmail.to` e um **A** para `mail` -> IP da VPS (`216.250.124.232`). Sem MX, o Gmail devolve *DNS type mx lookup ... had no relevant answers*. Detalhe: `docs/credentials-config.md` secao 9.
+
 | Usuario (mailbox) | Senha inicial | Alias | Dono principal | Observacao |
 | :--- | :--- | :--- | :--- | :--- |
 | `admin@hubmail.to` | `vault://mail/hubmail.to/admin` | `postmaster@hubmail.to` | TI | Conta tecnica |

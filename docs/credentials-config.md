@@ -27,6 +27,34 @@ Credenciais exibidas na tela "Setup complete" (senha nao e recuperavel depois; g
 - **Senha do administrador:** `IZkXuz8OkspObVlQ`
 - **Admin URL (final):** `https://mail.hubmail.to/admin` (aplique `systemctl restart stalwart` se ainda nao fez, conforme o fluxo do Stalwart)
 
+### HTTPS (Let's Encrypt) — estado atual
+
+Apos o ACME concluir a ordem para `mail.hubmail.to`, foi necessario definir **`SystemSettings.defaultCertificateId`** para o `Certificate` emitido pelo Let's Encrypt (o navegador deixou de mostrar o certificado autoassinado de bootstrap). Detalhe e comandos de verificacao: `docs/setup-ionos.md` secao **13.3**.
+
+**Importante:** o admin em **`http://mail.hubmail.to:8080`** e HTTP sem TLS — o Chrome mostra **"Nao seguro"** sempre. O acesso seguro e **`https://mail.hubmail.to/admin`** (porta **443**). Se a barra ainda assustar, veja o checklist em **13.4** do mesmo guia.
+
+## 2b) Stalwart Enterprise (trial) — aplicado no servidor
+
+Portal de licenciamento (referencia): `https://license.stalw.art/license/4815`
+
+- **Emitido para:** `hubmail.to`
+- **Licencas (mailboxes):** `25`
+- **Validade:** portal mostra **23 Abr 2026** a **23 Mai 2026**; a chave em binario carrega `validFrom` / `validTo` em UTC (~18 Abr 2026 – ~28 Mai 2026), alinhado com o evento `server.licensing` nos logs.
+- **License Key (correta — copiar uma linha):** `abvjaQAAAABpdxhqAAAAABkAAAAKAAAAaHVibWFpbC50b8AgduUusAL5Hny1105ensaXQOzC5RO3ulbXIrQZoA4pPeU3PQuXyc1z0p3+P5YpFsifC7YxMSiEIsbIdxZKjAE=`
+- **API Key (auto-renewal):** `K1Za7CJ6HR7s9Pg5KEoU5BmOjnnFHo2U`
+
+> A chave antiga no repo tinha um segmento Base64 errado (`AAhV...` em vez de `aHVibWFpbC50b...` = `hubmail.to`), o que invalidava a licenca offline e fazia falhar o Enterprise ate corrigir.
+
+### Como foi aplicado (VPS)
+
+1. Instalado `stalwart-cli` e link simbolico em `/usr/local/bin/stalwart-cli`.
+2. Atualizado o singleton `Enterprise` via CLI (`update enterprise`) com `licenseKey` + `apiKey` como `SecretKeyOptional/Value` (doc: [Enterprise object](https://stalw.art/docs/ref/object/enterprise)).
+3. Executado `systemctl restart stalwart` apos aplicar a licenca.
+
+### Pos-aplicacao (Web UI)
+
+Apos mudancas de licenca, a documentacao recomenda **logout/login** no Webadmin para refletir recursos Enterprise na sessao: [Enterprise license](https://stalw.art/docs/server/enterprise).
+
 ## 3) Wizard - Step 1 (Server Identity)
 
 Preencher com:
@@ -76,13 +104,33 @@ Configuracao recomendada para inicio (single node):
 - **Admin bootstrap (antes do restart final):** `http://216.250.124.232:8080/admin`
 - **Admin final (apos setup/restart):** `https://mail.hubmail.to/admin`
 
-## 9) DNS minimo para o dominio principal
+## 9) DNS minimo para o dominio principal (`hubmail.to`)
 
-- `A` -> `mail.hubmail.to` apontando para `216.250.124.232`
-- `MX` -> `hubmail.to` apontando para `mail.hubmail.to`
-- `TXT SPF`
-- `TXT DKIM` (gerado no Stalwart)
-- `TXT DMARC`
+Sem isto, o **recebimento** falha: o Gmail mostra *dominio nao encontrado* / *MX lookup ... had no relevant answers* — o dominio existe na raiz DNS, mas **nao ha registo MX** (nem A no apex), portanto ninguem sabe que o servidor de correio e a tua VPS.
+
+Publicar na **zona DNS de `hubmail.to`** (onde o dominio esta registado — IONOS, Cloudflare, etc.):
+
+| Tipo | Nome / host | Valor | Prioridade / TTL |
+| :--- | :--- | :--- | :--- |
+| **A** | `mail` (ou `mail.hubmail.to`) | `216.250.124.232` | default |
+| **MX** | `@` ou `hubmail.to` (raiz da zona) | `mail.hubmail.to` | prioridade **10** (ou 0) |
+
+Depois (recomendado para nao cair em spam):
+
+- **TXT** SPF (ex.: `v=spf1 mx a:mail.hubmail.to ~all` — ajustar a politica final com a doc do Stalwart)
+- **TXT** DKIM (copiar do Stalwart por dominio)
+- **TXT** DMARC (ex.: `_dmarc.hubmail.to`)
+
+**Verificacao** (quando propagar, alguns minutos a horas):
+
+```bash
+dig +short MX hubmail.to
+dig +short A mail.hubmail.to
+```
+
+O primeiro deve devolver algo como `10 mail.hubmail.to.` e o segundo `216.250.124.232`.
+
+> Estado verificado em 2026-04-23: `mail.hubmail.to` ja resolvia para a VPS; faltava **MX na raiz `hubmail.to`** no DNS publico — e exactamente o que o bounce do Gmail descreveu.
 
 ## 10) Comandos uteis (operacao)
 
@@ -91,6 +139,9 @@ sudo systemctl status stalwart
 sudo systemctl restart stalwart
 sudo journalctl -u stalwart -n 200 --no-pager
 sudo journalctl -u stalwart -f
+
+# Stalwart CLI (gestao via JMAP) — exemplo
+stalwart-cli --url https://mail.hubmail.to -k --user admin@hubmail.to --password '***' get enterprise --json
 ```
 
 ## 11) Seguranca (acao imediata recomendada)

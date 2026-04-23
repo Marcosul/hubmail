@@ -1,0 +1,20 @@
+generator client {
+  provider      = "prisma-client-js"
+  // Imagem Fly (node:bookworm-slim) usa OpenSSL 3
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+/// Metadados da app por utilizador Supabase Auth (`auth.users.id`).
+model Profile {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("profiles")
+}

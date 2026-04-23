@@ -128,11 +128,13 @@ https://mail.hubmail.to/admin
 
 Publique pelo menos:
 
-- `A`/`AAAA` para `mail.hubmail.to`
-- `MX` apontando para `mail.hubmail.to`
+- **`A` (ou `AAAA`)** para o **hostname do servidor** (ex.: `mail.hubmail.to` -> IPv4 da VPS).
+- **`MX` na zona do dominio de correio** (ex.: nome `@` / raiz em `hubmail.to`) apontando para esse hostname (`mail.hubmail.to`). Sem este registo, servidores externos (Gmail, Outlook, etc.) respondem *sem respostas MX* e a mensagem **nem chega** ao Stalwart — o erro nao e do Stalwart, e do DNS.
 - `TXT SPF`
 - `TXT DKIM` (gerado pelo Stalwart)
 - `TXT DMARC`
+
+**Exemplo concreto (HubMail):** na zona `hubmail.to`, criar `A` para `mail` -> `216.250.124.232` e `MX` em `@` -> `mail.hubmail.to` (prioridade 10). Ver tambem `docs/credentials-config.md` secao 9.
 
 Opcional e recomendado:
 
@@ -149,6 +151,12 @@ Checklist rapido:
 4. IMAP (143/993) responde externamente.
 5. Envio e recebimento entre um email externo e uma caixa local funcionam.
 6. SPF, DKIM e DMARC validam em ferramentas externas.
+
+### 10.1 Onde **abrir / ler** mensagens (importante)
+
+- **`https://mail.hubmail.to/admin`** — consola de **administracao** (operadores). Pode mostrar pastas e contagens ao gerir contas, mas **nao e um webmail** para ler o corpo do email como no Gmail.
+- **`https://mail.hubmail.to/account`** — [Account Manager](https://stalw.art/docs/management/webui/account-manager): o utilizador altera palavra-passe, **app passwords** (para clientes IMAP), 2FA, etc. A doc oficial **nao** descreve leitor de inbox completo aqui.
+- **Para ler e enviar correio no dia-a-dia:** use um **cliente de email** com **IMAP** (ou JMAP) contra `mail.hubmail.to`, por exemplo **Thunderbird**, **Outlook**, **Apple Mail** ou a app de correio do telemovel. Servidor de entrada: `mail.hubmail.to`, porta **993** (SSL) ou **143** (STARTTLS); SMTP: **587** (STARTTLS) ou **465** (SSL); utilizador = endereco completo (`admin@hubmail.to`) e a respetiva senha (ou *application password* se tiver 2FA).
 
 ## 11) Operacao e seguranca
 
@@ -190,6 +198,86 @@ Para acionar automacoes quando uma mensagem chega ao servidor, configure **um We
 6. **Operacao e confiabilidade:** mantenha `lossy` alinhado com a criticidade. Se o endpoint cair, eventos sem `lossy` podem acumular; defina `timeout`, `throttle` e `discardAfter` de forma conservadora.
 
 > Referencia complementar: anuncio de Webhooks/MTA Hooks (contexto geral) em [Stalwart blog: Webhooks and MTA Hooks](https://stalw.art/blog/webhooks)
+
+## 13) HTTPS / TLS: ACME nativo do Stalwart vs Certbot
+
+Se o navegador mostra **"Nao seguro"** mesmo em `https://mail.hubmail.to/...`, normalmente significa que o servidor ainda esta servindo um **certificado autoassinado de bootstrap** ate o Let's Encrypt emitir o certificado final.
+
+### 13.1 Caminho recomendado (sem Certbot)
+
+O Stalwart ja possui cliente **ACME** integrado. A configuracao correta fica em:
+
+- `Settings` -> `TLS` -> `ACME Providers` (objeto `AcmeProvider`): [Stalwart ACME configuration](https://stalw.art/docs/server/tls/acme/configuration)
+- `Settings` -> `TLS` -> `Certificates` (objeto `Certificate` para certificados manuais/importados): [Stalwart Certificates](https://stalw.art/docs/server/tls/certificates/)
+
+Checklist para o Let's Encrypt funcionar com o desafio padrao **TLS-ALPN-01**:
+
+1. **DNS publico** do `mail.hubmail.to` apontando para a VPS (A/AAAA).
+2. **Porta 443** acessivel publicamente (sem outro servico ocupando 443 na mesma maquina).
+3. **Sem proxy na frente** interceptando o ALPN ate o Stalwart (proxy errado quebra o desafio).
+4. Aguardar alguns minutos e recarregar; enquanto isso o navegador pode mostrar aviso de certificado autoassinado (comportamento descrito no fluxo de setup do Stalwart: [Stalwart Linux/MacOS Install](https://stalw.art/docs/install/platform/linux/)).
+
+Se voce nao pode expor 443 para validacao publica, troque o provider para **DNS-01** (integracao com provedor DNS ou registro TXT manual), conforme a doc de ACME: [Stalwart ACME configuration](https://stalw.art/docs/server/tls/acme/configuration).
+
+### 13.3 Certificado LE emitido mas o navegador ainda mostra autoassinado
+
+Pode ocorrer quando existem varios objetos `Certificate` (tentativas anteriores) e o **fallback SNI** ainda aponta para o certificado de bootstrap. Nesse caso:
+
+1. Liste certificados e confira qual tem **issuer Let's Encrypt** e SAN correto:
+
+   ```bash
+   stalwart-cli --url https://mail.hubmail.to -k --user admin@SEU_DOMINIO --password '***' query certificate --json
+   ```
+
+2. Defina o certificado padrao no singleton `SystemSettings` (substitua `<id>` pelo `id` do objeto `Certificate` desejado):
+
+   ```bash
+   stalwart-cli --url https://mail.hubmail.to -k --user admin@SEU_DOMINIO --password '***' \
+     update systemsettings singleton --json '{"defaultCertificateId":"<id>"}'
+   sudo systemctl restart stalwart
+   ```
+
+3. Valide na VPS (deve mostrar **Let's Encrypt**, nao `rcgen`):
+
+   ```bash
+   echo | openssl s_client -connect mail.hubmail.to:443 -servername mail.hubmail.to 2>/dev/null \
+     | openssl x509 -noout -subject -issuer -dates
+   ```
+
+### 13.2 Quando usar Certbot (opcional)
+
+Use Certbot **somente** se voce decidir emitir certificados **fora** do Stalwart e importar como `Certificate` (PEM) no painel, seguindo: [Stalwart Certificates](https://stalw.art/docs/server/tls/certificates/).
+
+Cuidado com conflito de porta:
+
+- `certbot certonly --standalone` tenta ocupar **80/443** e **conflita** com o Stalwart escutando em **443**.
+- Modo seguro com Stalwart rodando: **`certbot certonly --dns-01 ...`** (nao precisa bind em 443) e depois importar `fullchain.pem` + `privkey.pem`.
+
+Apos rotacionar arquivos no disco, use o fluxo de **reload de certificados** descrito na doc (sem necessidade de parar o servidor inteiro): [Stalwart Certificates](https://stalw.art/docs/server/tls/certificates/)
+
+### 13.4 Chrome mostra "Nao seguro" mas o Let's Encrypt ja esta na 443
+
+No Chrome, **"Nao seguro" em vermelho costuma significar HTTP (sem TLS)** ou **TLS invalido** (nome errado, certificado expirado, CA nao confiavel, etc.). O endereco na barra **nao mostra** `https://` mesmo quando a pagina e HTTPS; por isso confira o detalhe do aviso (clique no texto ou no icone).
+
+Checklist rapido:
+
+1. **Admin na porta 8080 e HTTP:** o Stalwart continua escutando `*:8080` com **HTTP puro** (sem criptografia). Qualquer URL como `http://mail.hubmail.to:8080/admin/...` aparecera como **Nao seguro** — isso e esperado. Use **somente** o admin em **HTTPS na 443**:
+
+   `https://mail.hubmail.to/admin/login`
+
+2. **Marcador ou historico com `http://`:** apague o marcador antigo e crie um novo apontando explicitamente para `https://mail.hubmail.to/...`.
+
+3. **Acesso pelo IP:** `https://216.250.124.232/...` pode gerar **nome nao confere com o certificado** (SAN e `mail.hubmail.to`). Use sempre o **hostname** publico.
+
+4. **Confirmar na maquina (Linux/macOS):** se o servidor publico estiver correto, o emissor deve ser Let's Encrypt:
+
+   ```bash
+   curl -vI 'https://mail.hubmail.to/admin/login' 2>&1 | sed -n '/Server certificate:/,/SSL certificate verify/p'
+   ```
+
+5. **Antivirus / proxy corporativo / SSL inspection:** alguns ambientes substituem o certificado; o Chrome acusa erro ou "Nao seguro". Teste em **rede outra** ou **aba anonima** sem extensoes.
+
+6. **Hardening opcional (VPS):** se ninguem precisa do admin pela internet na 8080, restrinja a 8080 no firewall para **apenas seu IP** ou **localhost**, para nao haver tentacao de usar HTTP por engano.
 
 ## Referencia oficial
 

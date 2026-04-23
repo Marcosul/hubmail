@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --color-hub-bg: #0a0a0a;
+  --color-hub-surface: #121212;
+  --color-hub-card: #141414;
+  --color-hub-border: #262626;
+  --color-hub-card: #141414;
+  --color-hub-muted: #a1a1aa;
+  --color-hub-light-bg: #ffffff;
+  --color-hub-light-surface: #f9fafb;
+  --color-hub-light-border: #e5e7eb;
+}
+
+html.light,
+.light body {
+  color-scheme: light;
+}
+
+html.dark,
+.dark body {
+  color-scheme: dark;
+}
+
+body {
+  font-family: var(--font-sans);
+}

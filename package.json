@@ -1,0 +1,22 @@
+{
+  "name": "hubmail",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm exec turbo dev",
+    "build": "pnpm exec turbo build",
+    "lint": "pnpm exec turbo lint",
+    "test": "pnpm exec turbo test",
+    "dev:webmail": "pnpm exec turbo dev --filter=@hubmail/webmail",
+    "dev:api": "pnpm exec turbo dev --filter=@hubmail/api",
+    "deploy:api": "pnpm --filter @hubmail/api run fly:deploy"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0"
+  },
+  "packageManager": "pnpm@10.30.1",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  }
+}
