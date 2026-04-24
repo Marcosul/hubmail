@@ -78,6 +78,12 @@ importers:
 
   apps/webmail:
     dependencies:
+      '@supabase/ssr':
+        specifier: ^0.10.2
+        version: 0.10.2(@supabase/supabase-js@2.104.1)
+      '@supabase/supabase-js':
+        specifier: ^2.104.1
+        version: 2.104.1
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -722,6 +728,11 @@ packages:
   '@supabase/realtime-js@2.104.1':
     resolution: {integrity: sha512-dVJHhFB2ErBd0/2qE9G8CedCrGoAtBfL9Q4zbSMXO7b1Cpld916ljSiX21mURUqijPf1WoPQG4Bp/averUzk/g==}
     engines: {node: '>=20.0.0'}
+
+  '@supabase/ssr@0.10.2':
+    resolution: {integrity: sha512-JFbchN63CXLFHJRNT7udec4/RoD9PmXkSGko3QSO6vUuqGBtSzdmxR7FPfQNr7SuFd65I7Xv46q66ALjEN1cgQ==}
+    peerDependencies:
+      '@supabase/supabase-js': ^2.102.1
 
   '@supabase/storage-js@2.104.1':
     resolution: {integrity: sha512-2bQaLbkRshctkUVuqamwYZDEd+0cGSc9DY9sjh92DcA5hu1F/1AP8p6gxGr76sgdK9Ngi0rh+2Kdh+uC4hcnGA==}
@@ -3866,6 +3877,11 @@ snapshots:
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
+
+  '@supabase/ssr@0.10.2(@supabase/supabase-js@2.104.1)':
+    dependencies:
+      '@supabase/supabase-js': 2.104.1
+      cookie: 1.1.1
 
   '@supabase/storage-js@2.104.1':
     dependencies:

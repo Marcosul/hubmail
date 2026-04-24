@@ -1,9 +1,12 @@
-import { cookies } from "next/headers";
 import { AppSidebar } from "@/components/dashboard/app-sidebar";
+import { createSupabaseServerClient } from "@/lib/supabase/server-client";
 
 export default async function DashboardRootLayout({ children }: { children: React.ReactNode }) {
-  const cookieStore = await cookies();
-  const email = cookieStore.get("hubmail_user_email")?.value;
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const email = user?.email;
   const userLabel = email?.includes("@") ? email.split("@")[0]! : email || "Account";
 
   return (
