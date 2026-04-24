@@ -13,11 +13,14 @@ export function DashboardShell({
   title,
   subtitle,
   actions,
+  breadcrumb,
 }: {
   children: React.ReactNode;
   title?: string;
   subtitle?: string;
   actions?: React.ReactNode;
+  /** When set, replaces the default pathname-based breadcrumb. */
+  breadcrumb?: React.ReactNode;
 }) {
   const pathname = usePathname();
 
@@ -36,6 +39,9 @@ export function DashboardShell({
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-[#0a0a0a]">
       <header className="border-b border-neutral-200 px-6 py-5 dark:border-hub-border lg:px-8">
+        {breadcrumb ? (
+          <div className="mb-2 text-xs text-neutral-500 dark:text-neutral-500">{breadcrumb}</div>
+        ) : (
         <nav className="mb-2 text-xs text-neutral-500 dark:text-neutral-500" aria-label="Breadcrumb">
           <ol className="flex flex-wrap items-center gap-1.5">
             {crumbs.map((c, i) => (
@@ -52,6 +58,7 @@ export function DashboardShell({
             ))}
           </ol>
         </nav>
+        )}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             {title && (

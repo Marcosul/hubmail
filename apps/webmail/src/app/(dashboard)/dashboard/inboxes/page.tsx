@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { MoreHorizontal } from "lucide-react";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { InboxTableActionsCell } from "@/components/inboxes/inbox-table-actions-cell";
+import { InboxTableRow } from "@/components/inboxes/inbox-table-row";
+
+const rows = [
+  { inboxId: "admin@hubmail.to", displayName: "Primary" },
+] as const;
 
 export default function InboxesPage() {
   return (
@@ -42,21 +48,23 @@ export default function InboxesPage() {
             </tr>
           </thead>
           <tbody>
-            <tr className="border-b border-neutral-200 dark:border-hub-border">
-              <td className="px-4 py-3 font-mono text-xs text-neutral-900 dark:text-neutral-200">admin@hubmail.to</td>
-              <td className="px-4 py-3 text-neutral-700 dark:text-neutral-300">Primary</td>
-              <td className="px-4 py-3 text-neutral-500 dark:text-neutral-500">—</td>
-              <td className="px-4 py-3 text-neutral-500 dark:text-neutral-500">—</td>
-              <td className="px-4 py-3">
-                <button
-                  type="button"
-                  className="rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-white/10"
-                  aria-label="Row actions"
-                >
-                  <MoreHorizontal className="size-4" />
-                </button>
-              </td>
-            </tr>
+            {rows.map((row) => (
+              <InboxTableRow key={row.inboxId} inboxId={row.inboxId} openFolder="sent">
+                <td className="px-4 py-3 font-mono text-xs text-neutral-900 dark:text-neutral-200">{row.inboxId}</td>
+                <td className="px-4 py-3 text-neutral-700 dark:text-neutral-300">{row.displayName}</td>
+                <td className="px-4 py-3 text-neutral-500 dark:text-neutral-500">—</td>
+                <td className="px-4 py-3 text-neutral-500 dark:text-neutral-500">—</td>
+                <InboxTableActionsCell>
+                  <button
+                    type="button"
+                    className="rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-white/10"
+                    aria-label="Row actions"
+                  >
+                    <MoreHorizontal className="size-4" />
+                  </button>
+                </InboxTableActionsCell>
+              </InboxTableRow>
+            ))}
           </tbody>
         </table>
         <div className="flex flex-col items-stretch justify-between gap-3 border-t border-neutral-200 px-4 py-3 text-sm text-neutral-500 dark:border-hub-border sm:flex-row sm:items-center">
