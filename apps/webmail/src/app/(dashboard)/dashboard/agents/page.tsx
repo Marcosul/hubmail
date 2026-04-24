@@ -38,7 +38,7 @@ export default function AgentsPage() {
 
   const [name, setName] = useState("");
   const [model, setModel] = useState(DEFAULT_MODEL);
-  const [systemPrompt, setSystemPrompt] = useState<string>(copy.defaultPrompt);
+  const [systemPrompt, setSystemPrompt] = useState<string>(() => copy.defaultPrompt);
   const [monthlyCents, setMonthlyCents] = useState(budget?.monthlyCents ?? 0);
   const [error, setError] = useState<string | null>(null);
 
