@@ -102,7 +102,7 @@ No wizard, preencha no minimo:
 3. **Automatically obtain TLS certificate:** manter habilitado (recomendado)
 4. **Generate email signing keys:** manter habilitado (DKIM)
 
-As demais etapas podem iniciar com padrao recomendado (RocksDB e diretorio interno), ajustando depois conforme necessidade.
+O armazenamento **em producao** deve usar **PostgreSQL no Supabase** (mesmas credenciais *direct* que a API, variavel `DIRECT_URL` em `apps/api/.env`); o assistente de instalacao ainda pode sugerir *embedded* (RocksDB) — prefira reconfigurar *Storage* para PostgreSQL apos o wizard, sem export/import de dados se nao houver carga a preservar. Guia: [stalwart-supabase-postgres.md](stalwart-supabase-postgres.md). O **diretorio de contas** continua a poder ser *Internal Directory* (dados do directorio no proprio *data store*).
 
 ## 8) Reiniciar apos concluir wizard
 

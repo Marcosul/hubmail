@@ -64,18 +64,22 @@ Preencher com:
 - **Automatically Obtain TLS Certificate:** `ON`
 - **Generate Email Signing Keys (DKIM):** `ON`
 
-## 4) Wizard - Step 2 (Storage)
+## 4) Wizard - Step 2 (Storage) — PostgreSQL (Supabase)
 
-Configuracao recomendada para inicio (single node):
+A configuracao em producao alinha o Stalwart ao **mesmo projecto Supabase** que a API HubMail: credenciais extraidas a partir de **`DIRECT_URL`** (ligacao *direct* ao Postgres, nao o pooler de `DATABASE_URL`) em [apps/api/.env](../apps/api/.env). Guia completo, mapeamento de campos e checklist na VPS: [stalwart-supabase-postgres.md](stalwart-supabase-postgres.md).
 
-- **Main Data Storage:** `RocksDB`
-- **Path:** `/var/lib/stalwart/data`
-- **Min blob size:** `16` `KB`
-- **Write buffer size:** `128` `MB`
-- **Thread pool size:** deixar vazio (default)
-- **Attachment & File Storage:** `Use data store`
-- **Full-Text Search Index:** `Use data store`
-- **Cache & Temporary Data:** `Use data store`
+**No Webadmin (ou equivalente na tua versao):**
+
+- **Main Data Storage:** `PostgreSQL` (variante `PostgreSql` / *store* PostgreSQL)
+- **host / port / database / user / password:** preencher a partir de `DIRECT_URL` (ex.: `db.<project-ref>.supabase.co`, `5432`, `postgres` — *ja descrito* no guia, sem colar segredos aqui)
+- **TLS:** ativado (`useTls`), conforme [doc Stalwart PostgreSQL](https://stalw.art/docs/storage/backends/postgresql/)
+- **Attachment & File Storage:** apontar para a **mesma** loja PostgreSQL (equivalente a *Use data store* com backend remoto)
+- **Full-Text Search Index:** idem, mesma loja, salvo se optar por outro *backend* de procura
+- **Cache & Temporary Data:** idem, ou conforme a doc da versao (single backend simplificado: tudo no mesmo Postgres)
+
+**Historico (setup inicial com RocksDB em disco local):** em implantacoes antigas o wizard recomendava RocksDB com path em `/var/lib/stalwart/data`. Essa fase deixou de ser o alvo; pode-se remover o antigo dado em disco apos validacao, se nao for necessario arquivo local.
+
+- **Thread pool / blob tuning** (RocksDB): nao aplicavel ao *store* remoto; deixe defaults do objecto PostgreSQL na doc da versao.
 
 ## 5) Wizard - Step 3 (Account Directory)
 

@@ -4,9 +4,10 @@ import { cn } from "@/lib/utils";
 type EmailComposerCardProps = {
   className?: string;
   compact?: boolean;
+  onClose?: () => void;
 };
 
-export function EmailComposerCard({ className, compact = false }: EmailComposerCardProps) {
+export function EmailComposerCard({ className, compact = false, onClose }: EmailComposerCardProps) {
   return (
     <section
       className={cn(
@@ -31,6 +32,7 @@ export function EmailComposerCard({ className, compact = false }: EmailComposerC
             type="button"
             className="rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-white/10"
             aria-label="Close compose"
+            onClick={onClose}
           >
             <X className="size-4" />
           </button>

@@ -61,6 +61,7 @@ PMEs, SaaS, agências e operações que precisam de e-mail confiável **e** inte
 ## Documentação relacionada (repositório)
 
 - `hubmail/docs/setup-ionos.md`: implantação do servidor (IONOS + Stalwart) e notas de TLS/ACME.
+- `hubmail/docs/stalwart-supabase-postgres.md`: Stalwart na VPS com armazenamento no PostgreSQL do Supabase (mapeamento a partir de `DIRECT_URL`, rede, checklist).
 - `hubmail/docs/domains-emails.md`: inventário de domínios e padrao de contas/aliases/webhooks por dominio.
 - `hubmail/docs/credentials-config.md`: credenciais e parametros do setup (operacional; nao versionar segredos a longo prazo).
 
