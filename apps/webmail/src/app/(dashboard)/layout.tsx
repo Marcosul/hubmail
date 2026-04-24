@@ -1,4 +1,5 @@
 import { AppSidebar } from "@/components/dashboard/app-sidebar";
+import { WorkspaceGate } from "@/components/workspace/workspace-gate";
 import { createSupabaseServerClient } from "@/lib/supabase/server-client";
 
 export default async function DashboardRootLayout({ children }: { children: React.ReactNode }) {
@@ -10,9 +11,11 @@ export default async function DashboardRootLayout({ children }: { children: Reac
   const userLabel = email?.includes("@") ? email.split("@")[0]! : email || "Account";
 
   return (
-    <div className="flex min-h-screen">
-      <AppSidebar userLabel={userLabel} />
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
-    </div>
+    <WorkspaceGate>
+      <div className="flex min-h-screen">
+        <AppSidebar userLabel={userLabel} />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+      </div>
+    </WorkspaceGate>
   );
 }

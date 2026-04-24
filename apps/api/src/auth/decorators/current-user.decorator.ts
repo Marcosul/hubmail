@@ -5,7 +5,7 @@ export const CurrentUser = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): User => {
     const req = ctx.switchToHttp().getRequest<{ user?: User }>();
     if (!req.user) {
-      throw new Error('CurrentUser sem utilizador — use SupabaseJwtAuthGuard');
+      throw new Error('CurrentUser decorator used without SupabaseJwtAuthGuard');
     }
     return req.user;
   },

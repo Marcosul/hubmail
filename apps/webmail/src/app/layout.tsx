@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
+import { HubmailQueryProvider } from "@/lib/query-client";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -22,7 +23,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
       <body className={`${geistSans.className} min-h-screen font-sans antialiased`}>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <HubmailQueryProvider>{children}</HubmailQueryProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

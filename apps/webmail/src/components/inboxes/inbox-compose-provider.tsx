@@ -5,10 +5,23 @@ import { Pencil } from "lucide-react";
 import { EmailComposerCard } from "@/components/inboxes/email-composer-card";
 import { cn } from "@/lib/utils";
 
+export type ComposeDraft = {
+  to?: string;
+  cc?: string;
+  bcc?: string;
+  subject?: string;
+  html?: string;
+  text?: string;
+  inReplyTo?: string;
+  references?: string[];
+  mailboxId?: string;
+};
+
 type ComposeCtx = {
   open: boolean;
+  draft: ComposeDraft | null;
   setOpen: (v: boolean) => void;
-  openCompose: () => void;
+  openCompose: (draft?: ComposeDraft) => void;
   closeCompose: () => void;
 };
 
@@ -16,14 +29,23 @@ const Ctx = createContext<ComposeCtx | null>(null);
 
 export function InboxComposeProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
-  const openCompose = useCallback(() => setOpen(true), []);
-  const closeCompose = useCallback(() => setOpen(false), []);
+  const [draft, setDraft] = useState<ComposeDraft | null>(null);
+  const openCompose = useCallback((initial?: ComposeDraft) => {
+    setDraft(initial ?? null);
+    setOpen(true);
+  }, []);
+  const closeCompose = useCallback(() => {
+    setOpen(false);
+    setDraft(null);
+  }, []);
   return (
-    <Ctx.Provider value={{ open, setOpen, openCompose, closeCompose }}>{children}</Ctx.Provider>
+    <Ctx.Provider value={{ open, draft, setOpen, openCompose, closeCompose }}>
+      {children}
+    </Ctx.Provider>
   );
 }
 
-function useInboxCompose() {
+export function useInboxCompose() {
   const v = useContext(Ctx);
   if (!v) {
     throw new Error("Inbox compose controls must be used within InboxComposeProvider");
@@ -37,18 +59,19 @@ const composeTriggerClass =
 export function InboxComposeTrigger({ className }: { className?: string }) {
   const { openCompose } = useInboxCompose();
   return (
-    <button type="button" onClick={openCompose} className={cn(composeTriggerClass, className)}>
+    <button
+      type="button"
+      onClick={() => openCompose()}
+      className={cn(composeTriggerClass, className)}
+    >
       <Pencil className="size-4" aria-hidden />
       Compose
     </button>
   );
 }
 
-/**
- * Fixed dock (estilo janela no canto); só visível com compose aberto.
- */
-export function InboxComposeDock() {
-  const { open, closeCompose } = useInboxCompose();
+export function InboxComposeDock({ mailboxId }: { mailboxId?: string }) {
+  const { open, draft, closeCompose } = useInboxCompose();
   if (!open) {
     return null;
   }
@@ -69,6 +92,8 @@ export function InboxComposeDock() {
           onClose={closeCompose}
           className="max-h-[min(560px,78vh)] shadow-2xl"
           compact
+          mailboxId={draft?.mailboxId ?? mailboxId}
+          initialDraft={draft ?? undefined}
         />
       </div>
     </>

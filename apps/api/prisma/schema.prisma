@@ -1,7 +1,7 @@
 generator client {
   provider      = "prisma-client-js"
-  // Imagem Fly (node:bookworm-slim) usa OpenSSL 3
-  binaryTargets = ["native", "debian-openssl-3.0.x"]
+  // Vercel Functions (amzn2) + local dev (openssl 3).
+  binaryTargets = ["native", "rhel-openssl-3.0.x", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -10,11 +10,398 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-/// Metadados da app por utilizador Supabase Auth (`auth.users.id`).
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum DomainStatus {
+  PENDING
+  VERIFIED
+  FAILED
+}
+
+enum MailCredentialKind {
+  APP_PASSWORD
+  OAUTH2
+}
+
+enum OutgoingMessageStatus {
+  QUEUED
+  SENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+enum InboxEventType {
+  RECEIVED
+  DELIVERED
+  BOUNCED
+  SPAM
+  OTHER
+}
+
+enum AutomationTrigger {
+  MAIL_RECEIVED
+  MAIL_SENT
+  MAIL_BOUNCED
+}
+
+enum AgentStatus {
+  IDLE
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// ---------------------------------------------------------------------------
+// Core: profile (Supabase user metadata shadow)
+// ---------------------------------------------------------------------------
+
+/// App-side shadow of `auth.users.id`. Keeps per-user metadata we may want
+/// to expand later (preferences, default workspace, etc).
 model Profile {
   id        String   @id @db.Uuid
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  memberships Membership[]
+
   @@map("profiles")
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy: organization / workspace / membership
+// ---------------------------------------------------------------------------
+
+model Organization {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  workspaces Workspace[]
+
+  @@map("organizations")
+}
+
+model Workspace {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  slug           String
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  memberships  Membership[]
+  domains      Domain[]
+  mailboxes    Mailbox[]
+  apiKeys      ApiKey[]
+  auditLogs    AuditLog[]
+  outgoing     OutgoingMessage[]
+  events       InboxEvent[]
+  automations  Automation[]
+  agents       Agent[]
+  budget       Budget?
+
+  @@unique([organizationId, slug])
+  @@index([createdAt])
+  @@map("workspaces")
+}
+
+model Membership {
+  id          String         @id @default(uuid()) @db.Uuid
+  userId      String         @map("user_id") @db.Uuid
+  workspaceId String         @map("workspace_id") @db.Uuid
+  role        MembershipRole @default(MEMBER)
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  profile   Profile   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId])
+  @@index([workspaceId])
+  @@map("memberships")
+}
+
+// ---------------------------------------------------------------------------
+// Mail plane: domains / mailboxes / credentials
+// ---------------------------------------------------------------------------
+
+model Domain {
+  id             String       @id @default(uuid()) @db.Uuid
+  workspaceId    String       @map("workspace_id") @db.Uuid
+  name           String
+  status         DomainStatus @default(PENDING)
+  dnsCheckedAt   DateTime?    @map("dns_checked_at")
+  webhookSecret  String?      @map("webhook_secret")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  mailboxes Mailbox[]
+  events    InboxEvent[]
+
+  @@unique([workspaceId, name])
+  @@index([status])
+  @@map("domains")
+}
+
+model Mailbox {
+  id                String   @id @default(uuid()) @db.Uuid
+  workspaceId       String   @map("workspace_id") @db.Uuid
+  domainId          String   @map("domain_id") @db.Uuid
+  address           String
+  displayName       String?  @map("display_name")
+  stalwartAccountId String?  @map("stalwart_account_id")
+  credentialId      String?  @unique @map("credential_id") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  workspace  Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  domain     Domain            @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  credential MailCredential?   @relation("MailboxCredential", fields: [credentialId], references: [id], onDelete: SetNull)
+  outgoing   OutgoingMessage[]
+  events     InboxEvent[]
+  index      MessageIndex[]
+
+  @@unique([workspaceId, address])
+  @@index([domainId])
+  @@map("mailboxes")
+}
+
+model MailCredential {
+  id         String             @id @default(uuid()) @db.Uuid
+  mailboxId  String             @map("mailbox_id") @db.Uuid
+  kind       MailCredentialKind @default(APP_PASSWORD)
+  secretRef  String             @map("secret_ref")
+  username   String?
+  rotatedAt  DateTime?          @map("rotated_at")
+  createdAt  DateTime           @default(now()) @map("created_at")
+  updatedAt  DateTime           @updatedAt @map("updated_at")
+
+  mailbox Mailbox? @relation("MailboxCredential")
+
+  @@index([mailboxId])
+  @@map("mail_credentials")
+}
+
+// ---------------------------------------------------------------------------
+// Index & outbox (Fase 1)
+// ---------------------------------------------------------------------------
+
+/// Optional metadata cache to speed up listings without hitting JMAP every
+/// time. The source of truth is still Stalwart.
+model MessageIndex {
+  id          String   @id @default(uuid()) @db.Uuid
+  mailboxId   String   @map("mailbox_id") @db.Uuid
+  jmapId      String   @map("jmap_id")
+  threadId    String?  @map("thread_id")
+  subject     String?
+  fromAddr    String?  @map("from_addr")
+  receivedAt  DateTime @map("received_at")
+  snippet     String?
+  flags       String[] @default([])
+  labels      String[] @default([])
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  mailbox Mailbox @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+
+  @@unique([mailboxId, jmapId])
+  @@index([mailboxId, receivedAt])
+  @@map("message_index")
+}
+
+model OutgoingMessage {
+  id          String                @id @default(uuid()) @db.Uuid
+  workspaceId String                @map("workspace_id") @db.Uuid
+  mailboxId   String                @map("mailbox_id") @db.Uuid
+  fromAddr    String                @map("from_addr")
+  toAddrs     String[]              @map("to_addrs")
+  ccAddrs     String[]              @default([]) @map("cc_addrs")
+  bccAddrs    String[]              @default([]) @map("bcc_addrs")
+  subject     String
+  bodyHtml    String?               @map("body_html")
+  bodyText    String?               @map("body_text")
+  inReplyTo   String?               @map("in_reply_to")
+  references  String[]              @default([])
+  attachments Json                  @default("[]")
+  status      OutgoingMessageStatus @default(QUEUED)
+  attempts    Int                   @default(0)
+  lastError   String?               @map("last_error")
+  scheduledAt DateTime?             @map("scheduled_at")
+  sentAt      DateTime?             @map("sent_at")
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  mailbox   Mailbox   @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status])
+  @@index([mailboxId, createdAt])
+  @@map("outgoing_messages")
+}
+
+// ---------------------------------------------------------------------------
+// Webhooks / events / automations (Fase 2)
+// ---------------------------------------------------------------------------
+
+model InboxEvent {
+  id          String         @id @default(uuid()) @db.Uuid
+  workspaceId String         @map("workspace_id") @db.Uuid
+  domainId    String         @map("domain_id") @db.Uuid
+  mailboxId   String?        @map("mailbox_id") @db.Uuid
+  messageId   String         @map("message_id")
+  type        InboxEventType
+  payload     Json           @default("{}")
+  signature   String?
+  receivedAt  DateTime       @default(now()) @map("received_at")
+  processedAt DateTime?      @map("processed_at")
+  error       String?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  domain    Domain    @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  mailbox   Mailbox?  @relation(fields: [mailboxId], references: [id], onDelete: SetNull)
+
+  @@unique([domainId, messageId, type])
+  @@index([workspaceId, receivedAt])
+  @@index([processedAt])
+  @@map("inbox_events")
+}
+
+model Automation {
+  id          String            @id @default(uuid()) @db.Uuid
+  workspaceId String            @map("workspace_id") @db.Uuid
+  name        String
+  trigger     AutomationTrigger
+  conditions  Json              @default("{}")
+  actions     Json              @default("[]")
+  enabled     Boolean           @default(true)
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, trigger])
+  @@map("automations")
+}
+
+// ---------------------------------------------------------------------------
+// Public API keys + audit log
+// ---------------------------------------------------------------------------
+
+model ApiKey {
+  id          String    @id @default(uuid()) @db.Uuid
+  workspaceId String    @map("workspace_id") @db.Uuid
+  name        String
+  hash        String    @unique
+  prefix      String
+  scopes      String[]  @default([])
+  lastUsedAt  DateTime? @map("last_used_at")
+  revokedAt   DateTime? @map("revoked_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, revokedAt])
+  @@map("api_keys")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  actor       String?
+  action      String
+  subjectType String?  @map("subject_type")
+  subjectId   String?  @map("subject_id")
+  data        Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// AI agents (Fase 3 — schema prepared now)
+// ---------------------------------------------------------------------------
+
+model Agent {
+  id            String   @id @default(uuid()) @db.Uuid
+  workspaceId   String   @map("workspace_id") @db.Uuid
+  name          String
+  model         String
+  systemPrompt  String   @map("system_prompt")
+  tools         String[] @default([])
+  policy        Json     @default("{}")
+  enabled       Boolean  @default(false)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  runs      AgentRun[]
+
+  @@index([workspaceId, enabled])
+  @@map("agents")
+}
+
+model AgentRun {
+  id              String      @id @default(uuid()) @db.Uuid
+  agentId         String      @map("agent_id") @db.Uuid
+  triggerEventId  String?     @map("trigger_event_id") @db.Uuid
+  status          AgentStatus @default(IDLE)
+  tokensIn        Int         @default(0) @map("tokens_in")
+  tokensOut       Int         @default(0) @map("tokens_out")
+  costCents       Int         @default(0) @map("cost_cents")
+  startedAt       DateTime?   @map("started_at")
+  endedAt         DateTime?   @map("ended_at")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  agent   Agent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  actions AgentAction[]
+
+  @@index([agentId, status])
+  @@map("agent_runs")
+}
+
+model AgentAction {
+  id          String   @id @default(uuid()) @db.Uuid
+  runId       String   @map("run_id") @db.Uuid
+  kind        String
+  input       Json     @default("{}")
+  output      Json     @default("{}")
+  approvedBy  String?  @map("approved_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  run AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@map("agent_actions")
+}
+
+model Budget {
+  workspaceId   String   @id @map("workspace_id") @db.Uuid
+  monthlyCents  Int      @default(0) @map("monthly_cents")
+  usedCents     Int      @default(0) @map("used_cents")
+  resetAt       DateTime? @map("reset_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("budgets")
 }

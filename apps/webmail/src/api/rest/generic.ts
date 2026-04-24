@@ -1,3 +1,5 @@
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser-client";
+
 export type ApiMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 type RequestOptions = {
@@ -6,11 +8,65 @@ type RequestOptions = {
   headers?: HeadersInit;
   cache?: RequestCache;
   signal?: AbortSignal;
+  workspaceId?: string;
+  skipAuth?: boolean;
 };
 
-function getRequestUrl(path: string) {
-  if (/^https?:\/\//i.test(path)) return path;
-  return path.startsWith("/") ? path : `/${path}`;
+export class ApiError extends Error {
+  readonly status: number;
+  readonly payload: unknown;
+
+  constructor(message: string, status: number, payload: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.payload = payload;
+  }
+}
+
+const WORKSPACE_COOKIE = "hubmail_workspace_id";
+
+function readWorkspaceCookie(): string | undefined {
+  if (typeof document === "undefined") return undefined;
+  const match = document.cookie
+    .split(";")
+    .map((v) => v.trim())
+    .find((v) => v.startsWith(`${WORKSPACE_COOKIE}=`));
+  return match?.slice(WORKSPACE_COOKIE.length + 1) || undefined;
+}
+
+export function setActiveWorkspaceId(workspaceId: string | null | undefined) {
+  if (typeof document === "undefined") return;
+  if (!workspaceId) {
+    document.cookie = `${WORKSPACE_COOKIE}=; path=/; max-age=0; SameSite=Lax`;
+    return;
+  }
+  document.cookie = `${WORKSPACE_COOKIE}=${workspaceId}; path=/; max-age=${60 * 60 * 24 * 30}; SameSite=Lax`;
+}
+
+export function getActiveWorkspaceId(): string | undefined {
+  return readWorkspaceCookie();
+}
+
+function resolveBaseUrl(): string {
+  const raw = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (!raw) return "";
+  return raw.replace(/\/$/, "");
+}
+
+function isAbsoluteUrl(path: string) {
+  return /^https?:\/\//i.test(path);
+}
+
+function getRequestUrl(path: string): string {
+  if (isAbsoluteUrl(path)) return path;
+  const base = resolveBaseUrl();
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  if (!base) return normalized;
+  if (normalized.startsWith("/api/auth/logout") || normalized.startsWith("/api/auth/login")) {
+    return normalized;
+  }
+  return `${base}${normalized}`;
 }
 
 function mergeHeaders(...sources: (HeadersInit | undefined)[]): Record<string, string> {
@@ -30,6 +86,17 @@ function mergeHeaders(...sources: (HeadersInit | undefined)[]): Record<string, s
   return out;
 }
 
+async function resolveAccessToken(): Promise<string | undefined> {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
   return fetch(getRequestUrl(input), {
     ...init,
@@ -42,8 +109,33 @@ export async function apiRequest<TResponse>(
   path: string,
   options: RequestOptions = {},
 ): Promise<TResponse> {
-  const { method = "GET", body, headers, cache = "no-store", signal } = options;
-  const merged = mergeHeaders({ "Content-Type": "application/json" }, headers);
+  const {
+    method = "GET",
+    body,
+    headers,
+    cache = "no-store",
+    signal,
+    workspaceId,
+    skipAuth,
+  } = options;
+
+  const authHeader: Record<string, string> = {};
+  if (!skipAuth) {
+    const token = await resolveAccessToken();
+    if (token) authHeader.Authorization = `Bearer ${token}`;
+  }
+
+  const workspace = workspaceId ?? getActiveWorkspaceId();
+  if (workspace) {
+    authHeader["X-Workspace-Id"] = workspace;
+  }
+
+  const merged = mergeHeaders(
+    { "Content-Type": "application/json" },
+    authHeader,
+    headers,
+  );
+
   const res = await fetch(getRequestUrl(path), {
     method,
     cache,
@@ -52,9 +144,24 @@ export async function apiRequest<TResponse>(
     headers: merged,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
+
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `Request failed (${res.status})`);
+    let payload: unknown = null;
+    const text = await res.text().catch(() => "");
+    if (text) {
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        payload = text;
+      }
+    }
+    const message =
+      (payload && typeof payload === "object" && "message" in payload
+        ? String((payload as { message: unknown }).message)
+        : text) || `Request failed (${res.status})`;
+    throw new ApiError(message, res.status, payload);
   }
+
+  if (res.status === 204) return undefined as TResponse;
   return (await res.json()) as TResponse;
 }

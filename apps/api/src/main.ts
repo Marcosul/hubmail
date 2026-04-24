@@ -12,18 +12,30 @@ const colors = {
   yellow: '\x1b[33m',
 };
 
-async function bootstrap() {
+function parseOrigins(raw: string | undefined): string[] {
+  if (!raw) return ['http://localhost:3010'];
+  return raw
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Cria e configura a aplicação Nest sobre Fastify, sem chamar `listen`.
+ * É usado tanto pelo bootstrap tradicional (servidor longo) como pelo
+ * handler serverless da Vercel (`apps/api/api/index.ts`).
+ */
+export async function createNestApp(): Promise<NestFastifyApplication> {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter(),
+    new FastifyAdapter({ trustProxy: true }),
+    { rawBody: true, bufferLogs: true },
   );
+
   app.setGlobalPrefix('api');
 
   const fastify = app.getHttpAdapter().getInstance();
   fastify.get('/', async (_req, reply) => {
-    console.log(
-      `${colors.magenta}📬 GET / — HubMail API (use /docs e /api/health) ✨${colors.reset}`,
-    );
     return reply.status(200).type('application/json').send({
       message:
         'HubMail API. Raiz: Swagger em /docs, saúde em /api/health, auth em /api/auth/*.',
@@ -33,22 +45,32 @@ async function bootstrap() {
     });
   });
 
+  const origins = parseOrigins(process.env.APP_URL);
   app.enableCors({
-    origin: process.env.APP_URL ?? 'http://localhost:3010',
+    origin: origins.length === 1 ? origins[0] : origins,
+    credentials: true,
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'PUT', 'OPTIONS'],
   });
 
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, transform: true }),
   );
 
-  const config = new DocumentBuilder()
-    .setTitle('HubMail API')
-    .setDescription('Auth por email e Google (Supabase Auth)')
-    .setVersion('0.1.0')
-    .addBearerAuth()
-    .build();
-  SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, config));
+  if (process.env.SWAGGER_DISABLED !== 'true') {
+    const config = new DocumentBuilder()
+      .setTitle('HubMail API')
+      .setDescription('Webmail + automações + agentes')
+      .setVersion('0.1.0')
+      .addBearerAuth()
+      .build();
+    SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, config));
+  }
 
+  return app;
+}
+
+async function bootstrap(): Promise<void> {
+  const app = await createNestApp();
   const host = '0.0.0.0';
   const port = Number(process.env.PORT ?? 3002);
   await app.listen(port, host);
@@ -56,7 +78,10 @@ async function bootstrap() {
   console.log(`${colors.green}✅ HubMail API online na porta ${port}${colors.reset}`);
   console.log(`${colors.cyan}🩺 Health: /api/health${colors.reset}`);
   console.log(`${colors.yellow}🔐 Auth: /api/auth/login, /api/auth/google, /api/auth/me${colors.reset}`);
-  console.log(`${colors.cyan}📚 Swagger: /docs${colors.reset}`);
+  console.log(`${colors.magenta}📚 Swagger: /docs${colors.reset}`);
 }
 
-bootstrap();
+// Só inicia o servidor HTTP se o ficheiro for o entrypoint (dev / VPS).
+if (require.main === module) {
+  bootstrap();
+}

@@ -1,115 +1,124 @@
-import type { LucideIcon } from "lucide-react";
+"use client";
+
 import Link from "next/link";
-import {
-  Bookmark,
-  CalendarClock,
-  FileEdit,
-  Flag,
-  Inbox,
-  Mail,
-  Mails,
-  RefreshCw,
-  Send,
-  Star,
-  Tag,
-  Trash2,
-} from "lucide-react";
+import { useMemo, useState } from "react";
+import { RefreshCw, Star, Tag, Trash2 } from "lucide-react";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import {
   InboxComposeDock,
   InboxComposeProvider,
   InboxComposeTrigger,
+  useInboxCompose,
 } from "@/components/inboxes/inbox-compose-provider";
+import { ThreadViewer } from "@/components/inboxes/thread-viewer";
+import {
+  useMailFolders,
+  useMailboxes,
+  usePatchMessage,
+  useThreads,
+} from "@/hooks/use-mail";
 import { getFolderLabel, inboxFolderHref } from "@/lib/inbox-routes";
 import { cn } from "@/lib/utils";
-
-type ThreadRow = { id: string; from: string; subject: string; time: string; unread: boolean };
-
-const mailFolders: { slug: string; label: string; icon: LucideIcon }[] = [
-  { slug: "inbox", label: "Inbox", icon: Inbox },
-  { slug: "starred", label: "Starred", icon: Star },
-  { slug: "sent", label: "Sent", icon: Send },
-  { slug: "drafts", label: "Drafts", icon: FileEdit },
-  { slug: "important", label: "Important", icon: Bookmark },
-  { slug: "scheduled", label: "Scheduled", icon: CalendarClock },
-  { slug: "all-mail", label: "All mail", icon: Mails },
-  { slug: "spam", label: "Spam", icon: Mail },
-  { slug: "trash", label: "Trash", icon: Trash2 },
-];
-
-function getThreadsForFolder(_inboxId: string, folderSlug: string): ThreadRow[] {
-  if (folderSlug === "sent") {
-    return [
-      { id: "1", from: "AgentMail", subject: "(no subject)", time: "10:59 AM", unread: false },
-    ];
-  }
-  return [];
-}
 
 type InboxMailViewProps = {
   inboxId: string;
   folderSlug: string;
+  threadId?: string;
 };
 
-function InboxBreadcrumb({ inboxId, folderLabel }: { inboxId: string; folderLabel: string }) {
+function matchFolderBySlug(folders: ReturnType<typeof useMailFolders>["data"], slug: string) {
+  if (!folders) return undefined;
+  const slugNormalized = slug.replace(/-/g, "");
   return (
-    <nav className="text-xs text-neutral-500 dark:text-neutral-500" aria-label="Breadcrumb">
-      <ol className="flex flex-wrap items-center gap-1.5">
-        <li>
-          <Link className="hover:text-neutral-800 dark:hover:text-neutral-300" href="/dashboard/overview">
-            Dashboard
-          </Link>
-        </li>
-        <li className="text-neutral-400">/</li>
-        <li>
-          <Link className="hover:text-neutral-800 dark:hover:text-neutral-300" href="/dashboard/inboxes">
-            Inboxes
-          </Link>
-        </li>
-        <li className="text-neutral-400">/</li>
-        <li className="text-neutral-600 dark:text-neutral-400">{inboxId}</li>
-        <li className="text-neutral-400">/</li>
-        <li className="text-neutral-600 dark:text-neutral-400">{folderLabel}</li>
-      </ol>
-    </nav>
+    folders.find((f) => (f.role ?? "").toLowerCase() === slugNormalized) ||
+    folders.find((f) => f.name.toLowerCase() === slug.replace(/-/g, " "))
   );
 }
 
-export function InboxMailView({ inboxId, folderSlug }: InboxMailViewProps) {
-  const folderLabel = getFolderLabel(folderSlug);
-  const threads = getThreadsForFolder(inboxId, folderSlug);
-  const labelPill = folderSlug.replace(/-/g, " ") || "inbox";
+function formatRelative(dateString: string | Date) {
+  const date = typeof dateString === "string" ? new Date(dateString) : dateString;
+  if (Number.isNaN(date.getTime())) return "";
+  const diff = Date.now() - date.getTime();
+  const oneDay = 24 * 60 * 60 * 1000;
+  if (diff < oneDay) return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (diff < 7 * oneDay) return date.toLocaleDateString([], { weekday: "short" });
+  return date.toLocaleDateString([], { day: "2-digit", month: "short" });
+}
 
+export function InboxMailView({ inboxId, folderSlug, threadId }: InboxMailViewProps) {
   return (
     <InboxComposeProvider>
+      <Content inboxId={inboxId} folderSlug={folderSlug} threadId={threadId} />
+    </InboxComposeProvider>
+  );
+}
+
+function Content({ inboxId, folderSlug, threadId }: InboxMailViewProps) {
+  const { data: mailboxes } = useMailboxes();
+  const { openCompose } = useInboxCompose();
+  const mailbox = useMemo(
+    () => mailboxes?.find((m) => m.id === inboxId) ?? mailboxes?.[0],
+    [mailboxes, inboxId],
+  );
+  const { data: folders } = useMailFolders(mailbox?.id);
+  const folderMatch = matchFolderBySlug(folders, folderSlug);
+  const { data: page, isLoading, refetch } = useThreads(mailbox?.id, {
+    folderId: folderMatch?.id,
+    limit: 30,
+  });
+  const patch = usePatchMessage();
+
+  const [selectedThreadId, setSelectedThreadId] = useState<string | undefined>(threadId);
+  const activeThreadId = threadId ?? selectedThreadId;
+
+  const folderLabel = getFolderLabel(folderSlug);
+  const labelPill = folderSlug.replace(/-/g, " ") || "inbox";
+
+  const sortedFolders = useMemo(() => {
+    if (!folders) return [];
+    return [...folders].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  }, [folders]);
+
+  return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
       <aside className="hidden w-52 shrink-0 flex-col border-r border-neutral-200 bg-neutral-50/90 dark:border-hub-border dark:bg-[#0f0f0f] lg:flex">
         <div className="border-b border-neutral-200 p-3 dark:border-hub-border">
           <InboxComposeTrigger />
         </div>
         <div className="flex items-center justify-between border-b border-neutral-200 px-3 py-2 dark:border-hub-border">
-          <button type="button" className="rounded p-1.5 text-neutral-500 hover:bg-neutral-200 dark:hover:bg-white/10" aria-label="Refresh">
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="rounded p-1.5 text-neutral-500 hover:bg-neutral-200 dark:hover:bg-white/10"
+            aria-label="Refresh"
+          >
             <RefreshCw className="size-4" />
           </button>
-          <span className="text-xs text-neutral-500 dark:text-neutral-400">Inboxes</span>
+          <span className="text-xs text-neutral-500 dark:text-neutral-400">
+            {mailbox?.address.split("@")[0] ?? "inbox"}
+          </span>
         </div>
         <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">
-          {mailFolders.map((f) => {
-            const Icon = f.icon;
-            const active = f.slug === folderSlug;
+          {sortedFolders.map((f) => {
+            const slug = (f.role ?? f.name.toLowerCase().replace(/\s+/g, "-")) || "inbox";
+            const active = f.id === folderMatch?.id;
             return (
               <Link
-                key={f.slug}
-                href={inboxFolderHref(inboxId, f.slug)}
+                key={f.id}
+                href={inboxFolderHref(mailbox?.id ?? inboxId, slug)}
                 className={cn(
-                  "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm",
+                  "flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm",
                   active
                     ? "bg-neutral-200/90 font-medium text-neutral-950 dark:bg-white/10 dark:text-white"
                     : "text-neutral-600 hover:bg-neutral-200/60 dark:text-neutral-400 dark:hover:bg-white/5",
                 )}
               >
-                <Icon className="size-4 shrink-0 opacity-80" aria-hidden />
-                {f.label}
+                <span className="truncate">{f.name}</span>
+                {f.unreadEmails > 0 ? (
+                  <span className="ml-2 shrink-0 rounded bg-neutral-900 px-1.5 text-[10px] font-medium text-white dark:bg-white dark:text-neutral-900">
+                    {f.unreadEmails}
+                  </span>
+                ) : null}
               </Link>
             );
           })}
@@ -119,8 +128,7 @@ export function InboxMailView({ inboxId, folderSlug }: InboxMailViewProps) {
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <DashboardShell
           title={folderLabel}
-          subtitle={inboxId}
-          breadcrumb={<InboxBreadcrumb inboxId={inboxId} folderLabel={folderLabel} />}
+          subtitle={mailbox?.address}
           actions={
             <>
               <Link
@@ -135,87 +143,119 @@ export function InboxMailView({ inboxId, folderSlug }: InboxMailViewProps) {
               >
                 Allow/Block
               </Link>
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  className="rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-hub-border dark:bg-hub-card dark:text-white"
-                  defaultValue="all"
-                  aria-label="Include filter"
-                >
-                  <option value="all">Include: All</option>
-                </select>
-                <select
-                  className="rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-hub-border dark:bg-hub-card dark:text-white"
-                  defaultValue="30"
-                  aria-label="Threads per page"
-                >
-                  <option value="30">Threads per page: 30</option>
-                </select>
-              </div>
             </>
           }
         >
           <div className="mb-4 flex flex-col gap-3 border-b border-neutral-200 pb-4 sm:flex-row sm:items-center sm:justify-between dark:border-hub-border">
             <div className="text-xs text-neutral-500 dark:text-neutral-500">
               Inboxes <span className="text-neutral-400">&gt;</span>{" "}
-              <span className="font-mono text-neutral-700 dark:text-neutral-300">{inboxId}</span>{" "}
+              <span className="font-mono text-neutral-700 dark:text-neutral-300">{mailbox?.address}</span>{" "}
               <span className="text-neutral-400">&gt;</span> {folderLabel}
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                className="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-white/10"
-                aria-label="Refresh list"
-              >
-                <RefreshCw className="size-4" />
-              </button>
               <div className="flex items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-400">
                 <Tag className="size-3.5" />
-                <span>Labels +</span>
                 <span className="rounded border border-neutral-200 bg-neutral-100 px-2 py-0.5 text-[10px] font-medium dark:border-hub-border dark:bg-white/5">
                   {labelPill}
                 </span>
               </div>
-              <div className="flex items-center gap-1.5 text-xs text-neutral-500">
-                <span>
-                  1 to {Math.max(threads.length, 1)}
-                </span>
-                <span className="text-neutral-400" aria-hidden>
-                  &lt;&lt; &lt; &gt; &gt;&gt;
-                </span>
-              </div>
+              <span className="text-xs text-neutral-500">
+                {isLoading ? "…" : `${page?.threads.length ?? 0} de ${page?.total ?? 0}`}
+              </span>
             </div>
           </div>
 
-          <div className="min-h-[520px]">
+          <div className="grid min-h-[520px] gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
             <section className="min-w-0 overflow-hidden rounded-lg border border-neutral-200 bg-white dark:border-hub-border dark:bg-[#0f0f0f]">
-              <ul className="divide-y divide-neutral-200 dark:divide-hub-border">
-                {threads.length === 0 ? (
-                  <li className="px-3 py-12 text-center text-sm text-neutral-500 dark:text-neutral-500">No messages</li>
-                ) : (
-                  threads.map((thread) => (
-                    <li key={thread.id}>
-                      <button
-                        type="button"
-                        className="grid w-full grid-cols-[20px_20px_1fr_auto] items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-neutral-50 dark:hover:bg-white/5"
-                      >
-                        <Star className="size-4 text-neutral-400" />
-                        <Flag className="size-4 text-neutral-400" />
-                        <div className="min-w-0">
-                          <p className="font-medium text-neutral-900 dark:text-white">{thread.from}</p>
-                          <p className="text-neutral-500 dark:text-neutral-400">{thread.subject}</p>
-                        </div>
-                        <span className="shrink-0 text-xs text-neutral-500 dark:text-neutral-400">{thread.time}</span>
-                      </button>
-                    </li>
-                  ))
-                )}
-              </ul>
+              {isLoading ? (
+                <p className="px-3 py-12 text-center text-sm text-neutral-500">
+                  A sincronizar com Stalwart…
+                </p>
+              ) : page?.threads.length === 0 ? (
+                <p className="px-3 py-12 text-center text-sm text-neutral-500">
+                  Sem mensagens nesta pasta
+                </p>
+              ) : (
+                <ul className="divide-y divide-neutral-200 dark:divide-hub-border">
+                  {page?.threads.map((thread) => {
+                    const active = thread.id === activeThreadId;
+                    return (
+                      <li key={thread.id}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedThreadId(thread.id)}
+                          className={cn(
+                            "grid w-full grid-cols-[20px_20px_1fr_auto] items-center gap-2 px-3 py-2.5 text-left text-sm",
+                            active
+                              ? "bg-neutral-100 dark:bg-white/10"
+                              : "hover:bg-neutral-50 dark:hover:bg-white/5",
+                          )}
+                        >
+                          <Star
+                            className={cn(
+                              "size-4",
+                              thread.starred ? "fill-yellow-400 text-yellow-500" : "text-neutral-400",
+                            )}
+                          />
+                          <span />
+                          <div className="min-w-0">
+                            <p className="font-medium text-neutral-900 dark:text-white">
+                              {thread.from.name || thread.from.email || "(sem remetente)"}
+                            </p>
+                            <p className="truncate text-neutral-500 dark:text-neutral-400">
+                              {thread.subject}
+                            </p>
+                          </div>
+                          <span className="shrink-0 text-xs text-neutral-500 dark:text-neutral-400">
+                            {formatRelative(thread.receivedAt)}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+
+            <section className="min-w-0 overflow-hidden rounded-lg border border-neutral-200 bg-white dark:border-hub-border dark:bg-[#0f0f0f]">
+              {activeThreadId && mailbox ? (
+                <ThreadViewer
+                  mailboxId={mailbox.id}
+                  threadId={activeThreadId}
+                  onDelete={async (emailId) => {
+                    await patch.mutateAsync({
+                      emailId,
+                      mailboxId: mailbox.id,
+                      patch: { delete: true },
+                    });
+                  }}
+                  onToggleStar={async (emailId, starred) => {
+                    await patch.mutateAsync({
+                      emailId,
+                      mailboxId: mailbox.id,
+                      patch: { starred },
+                    });
+                  }}
+                  onToggleUnread={async (emailId, unread) => {
+                    await patch.mutateAsync({
+                      emailId,
+                      mailboxId: mailbox.id,
+                      patch: { unread },
+                    });
+                  }}
+                  onReply={(draft) => openCompose({ ...draft, mailboxId: mailbox.id })}
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center p-12 text-sm text-neutral-500">
+                  <Trash2 className="mr-2 size-4" aria-hidden />
+                  Selecione uma conversa para ler
+                </div>
+              )}
             </section>
           </div>
         </DashboardShell>
       </div>
+      <InboxComposeDock mailboxId={mailbox?.id} />
     </div>
-    <InboxComposeDock />
-    </InboxComposeProvider>
   );
 }

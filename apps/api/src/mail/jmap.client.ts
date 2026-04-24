@@ -1,0 +1,353 @@
+import { BadGatewayException, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import type {
+  JmapEmail,
+  JmapInvocation,
+  JmapMailboxSummary,
+  JmapResponse,
+  JmapSession,
+  JmapThread,
+} from './jmap.types';
+
+const c = {
+  reset: '\x1b[0m',
+  cyan: '\x1b[36m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  red: '\x1b[31m',
+};
+
+export interface JmapCredentials {
+  username: string;
+  password: string;
+}
+
+const MAIL_CAP = 'urn:ietf:params:jmap:mail';
+const CORE_CAP = 'urn:ietf:params:jmap:core';
+
+@Injectable()
+export class JmapClient {
+  private readonly log = new Logger(JmapClient.name);
+  private readonly sessionCache = new Map<string, { session: JmapSession; fetchedAt: number }>();
+
+  constructor(private readonly config: ConfigService) {}
+
+  private sessionUrl(): string {
+    const url =
+      this.config.get<string>('STALWART_JMAP_URL')?.trim() ||
+      `${this.config.get<string>('STALWART_BASE_URL')?.trim() ?? ''}/jmap/session`;
+    if (!url) {
+      throw new BadGatewayException('Defina STALWART_JMAP_URL no .env');
+    }
+    return url.endsWith('/jmap/session') ? url : `${url.replace(/\/$/, '')}/jmap/session`;
+  }
+
+  private authHeader(creds: JmapCredentials): string {
+    return `Basic ${Buffer.from(`${creds.username}:${creds.password}`, 'utf8').toString('base64')}`;
+  }
+
+  async getSession(creds: JmapCredentials): Promise<JmapSession> {
+    const cacheKey = creds.username;
+    const cached = this.sessionCache.get(cacheKey);
+    if (cached && Date.now() - cached.fetchedAt < 60_000) {
+      return cached.session;
+    }
+
+    const url = this.sessionUrl();
+    this.log.debug(`${c.cyan}🧭${c.reset} JMAP session → ${url}`);
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: this.authHeader(creds) },
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      this.log.error(`${c.red}❌ JMAP session falhou (${res.status}):${c.reset} ${text}`);
+      throw new BadGatewayException(`JMAP session falhou: ${res.status}`);
+    }
+    const raw = (await res.json()) as {
+      apiUrl: string;
+      downloadUrl: string;
+      uploadUrl: string;
+      primaryAccounts: Record<string, string>;
+      accounts?: Record<string, { name?: string; isPersonal?: boolean }>;
+    };
+    const session: JmapSession = {
+      apiUrl: raw.apiUrl,
+      downloadUrl: raw.downloadUrl,
+      uploadUrl: raw.uploadUrl,
+      primaryAccounts: raw.primaryAccounts,
+      accounts: raw.accounts ?? {},
+    };
+    this.sessionCache.set(cacheKey, { session, fetchedAt: Date.now() });
+    this.log.log(`${c.green}🟢${c.reset} JMAP session ok (user ${creds.username})`);
+    return session;
+  }
+
+  private primaryAccountId(session: JmapSession): string {
+    const accountId = session.primaryAccounts[MAIL_CAP];
+    if (!accountId) {
+      throw new BadGatewayException('JMAP session não expõe accountId para urn:ietf:params:jmap:mail');
+    }
+    return accountId;
+  }
+
+  private async invoke(
+    session: JmapSession,
+    creds: JmapCredentials,
+    calls: JmapInvocation[],
+  ): Promise<JmapInvocation[]> {
+    const body = {
+      using: [CORE_CAP, MAIL_CAP],
+      methodCalls: calls,
+    };
+    const res = await fetch(session.apiUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: this.authHeader(creds),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      this.log.error(
+        `${c.red}❌ JMAP invoke falhou (${res.status}):${c.reset} ${text.slice(0, 300)}`,
+      );
+      throw new BadGatewayException(`JMAP call falhou: ${res.status}`);
+    }
+    const data = (await res.json()) as JmapResponse;
+    return data.methodResponses;
+  }
+
+  async listMailboxes(creds: JmapCredentials): Promise<JmapMailboxSummary[]> {
+    const session = await this.getSession(creds);
+    const accountId = this.primaryAccountId(session);
+    const responses = await this.invoke(session, creds, [
+      ['Mailbox/get', { accountId, ids: null }, '0'],
+    ]);
+    const mailboxResult = responses.find((r) => r[0] === 'Mailbox/get');
+    if (!mailboxResult) return [];
+    const list = (mailboxResult[1] as { list?: JmapMailboxSummary[] }).list ?? [];
+    return list.map((mb) => ({
+      id: mb.id,
+      name: mb.name,
+      role: mb.role ?? null,
+      parentId: mb.parentId ?? null,
+      totalEmails: Number(mb.totalEmails ?? 0),
+      unreadEmails: Number(mb.unreadEmails ?? 0),
+      sortOrder: mb.sortOrder ?? 0,
+    }));
+  }
+
+  async listThreads(
+    creds: JmapCredentials,
+    opts: { mailboxId?: string; cursor?: number; limit?: number; search?: string },
+  ) {
+    const session = await this.getSession(creds);
+    const accountId = this.primaryAccountId(session);
+    const position = opts.cursor ?? 0;
+    const limit = Math.min(Math.max(opts.limit ?? 30, 1), 100);
+    const filter: Record<string, unknown> = {};
+    if (opts.mailboxId) filter.inMailbox = opts.mailboxId;
+    if (opts.search) filter.text = opts.search;
+
+    const responses = await this.invoke(session, creds, [
+      [
+        'Email/query',
+        {
+          accountId,
+          filter,
+          sort: [{ property: 'receivedAt', isAscending: false }],
+          position,
+          limit,
+          collapseThreads: true,
+        },
+        '0',
+      ],
+      [
+        'Email/get',
+        {
+          accountId,
+          '#ids': { resultOf: '0', name: 'Email/query', path: '/ids' },
+          properties: [
+            'id',
+            'threadId',
+            'mailboxIds',
+            'keywords',
+            'subject',
+            'preview',
+            'from',
+            'to',
+            'cc',
+            'bcc',
+            'receivedAt',
+            'sentAt',
+            'hasAttachment',
+          ],
+        },
+        '1',
+      ],
+    ]);
+    const queryResult = responses.find((r) => r[0] === 'Email/query')?.[1] as {
+      ids?: string[];
+      total?: number;
+      position?: number;
+    } | undefined;
+    const getResult = responses.find((r) => r[0] === 'Email/get')?.[1] as
+      | { list?: JmapEmail[] }
+      | undefined;
+    const emails = getResult?.list ?? [];
+    return {
+      emails,
+      total: queryResult?.total ?? emails.length,
+      position: queryResult?.position ?? position,
+      nextCursor: (queryResult?.position ?? position) + emails.length,
+    };
+  }
+
+  async getThread(creds: JmapCredentials, threadId: string) {
+    const session = await this.getSession(creds);
+    const accountId = this.primaryAccountId(session);
+    const responses = await this.invoke(session, creds, [
+      ['Thread/get', { accountId, ids: [threadId] }, '0'],
+      [
+        'Email/get',
+        {
+          accountId,
+          '#ids': { resultOf: '0', name: 'Thread/get', path: '/list/*/emailIds' },
+          properties: [
+            'id',
+            'threadId',
+            'mailboxIds',
+            'keywords',
+            'subject',
+            'preview',
+            'from',
+            'to',
+            'cc',
+            'bcc',
+            'replyTo',
+            'receivedAt',
+            'sentAt',
+            'hasAttachment',
+            'inReplyTo',
+            'references',
+            'attachments',
+            'htmlBody',
+            'textBody',
+            'bodyValues',
+          ],
+          fetchHTMLBodyValues: true,
+          fetchTextBodyValues: true,
+        },
+        '1',
+      ],
+    ]);
+    const thread = (responses.find((r) => r[0] === 'Thread/get')?.[1] as {
+      list?: JmapThread[];
+    } | undefined)?.list?.[0];
+    const emails =
+      (responses.find((r) => r[0] === 'Email/get')?.[1] as { list?: JmapEmail[] } | undefined)
+        ?.list ?? [];
+    if (!thread) {
+      return null;
+    }
+    return { thread, emails };
+  }
+
+  async getEmail(creds: JmapCredentials, emailId: string) {
+    const session = await this.getSession(creds);
+    const accountId = this.primaryAccountId(session);
+    const responses = await this.invoke(session, creds, [
+      [
+        'Email/get',
+        {
+          accountId,
+          ids: [emailId],
+          properties: [
+            'id',
+            'threadId',
+            'mailboxIds',
+            'keywords',
+            'subject',
+            'from',
+            'to',
+            'cc',
+            'bcc',
+            'replyTo',
+            'receivedAt',
+            'sentAt',
+            'htmlBody',
+            'textBody',
+            'bodyValues',
+            'attachments',
+            'inReplyTo',
+            'references',
+          ],
+          fetchHTMLBodyValues: true,
+          fetchTextBodyValues: true,
+        },
+        '0',
+      ],
+    ]);
+    const list =
+      (responses[0]?.[1] as { list?: JmapEmail[] } | undefined)?.list ?? [];
+    return list[0] ?? null;
+  }
+
+  async patchEmail(
+    creds: JmapCredentials,
+    emailId: string,
+    patch: {
+      keywords?: Record<string, boolean>;
+      mailboxIds?: Record<string, boolean>;
+      destroy?: boolean;
+    },
+  ) {
+    const session = await this.getSession(creds);
+    const accountId = this.primaryAccountId(session);
+    const update: Record<string, Record<string, unknown>> = {};
+    if (!patch.destroy) {
+      const change: Record<string, unknown> = {};
+      if (patch.keywords) {
+        for (const [k, v] of Object.entries(patch.keywords)) {
+          change[`keywords/${k}`] = v || null;
+        }
+      }
+      if (patch.mailboxIds) {
+        for (const [k, v] of Object.entries(patch.mailboxIds)) {
+          change[`mailboxIds/${k}`] = v || null;
+        }
+      }
+      update[emailId] = change;
+    }
+    const calls: JmapInvocation[] = [
+      [
+        'Email/set',
+        {
+          accountId,
+          update: Object.keys(update).length ? update : undefined,
+          destroy: patch.destroy ? [emailId] : undefined,
+        },
+        '0',
+      ],
+    ];
+    const responses = await this.invoke(session, creds, calls);
+    const result = responses[0]?.[1] as {
+      updated?: Record<string, unknown>;
+      destroyed?: string[];
+      notUpdated?: Record<string, { type: string; description?: string }>;
+      notDestroyed?: Record<string, { type: string; description?: string }>;
+    };
+    const failed =
+      (result?.notUpdated && result.notUpdated[emailId]) ||
+      (result?.notDestroyed && result.notDestroyed[emailId]);
+    if (failed) {
+      throw new BadGatewayException(`JMAP Email/set falhou: ${failed.type}`);
+    }
+    this.log.debug(
+      `${c.cyan}✍️${c.reset}  email ${emailId} atualizado (destroy=${Boolean(patch.destroy)})`,
+    );
+    return { ok: true };
+  }
+}

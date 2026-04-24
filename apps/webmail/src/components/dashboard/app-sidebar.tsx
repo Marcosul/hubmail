@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   BarChart3,
+  Bot,
   ChevronDown,
   Globe,
   Inbox,
@@ -30,6 +31,7 @@ const nav = [
   { href: "/dashboard/inboxes", label: "Inboxes", icon: Inbox },
   { href: "/dashboard/domains", label: "Domains", icon: Globe },
   { href: "/dashboard/webhooks", label: "Webhooks", icon: Webhook },
+  { href: "/dashboard/agents", label: "Agents", icon: Bot },
   { href: "/dashboard/api-keys", label: "API Keys", icon: KeyRound },
   { href: "/dashboard/allow-block", label: "Allow/Block Lists", icon: ListFilter },
   { href: "/dashboard/metrics", label: "Metrics", icon: BarChart3 },

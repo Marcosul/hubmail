@@ -146,8 +146,24 @@ function main() {
     SUPABASE_SERVICE_ROLE_KEY: serviceKey,
     DATABASE_URL: databaseUrl,
     DIRECT_URL: directUrl,
-    APP_URL: WEBMAIL_PUBLIC_URL,
+    APP_URL: `${WEBMAIL_PUBLIC_URL},https://www.hubmail.to`,
+    WORKERS_ENABLED: 'false',
+    SWAGGER_DISABLED: 'true',
   };
+
+  const optionalApi = {
+    MAIL_CREDENTIAL_KEY: apiEnv.MAIL_CREDENTIAL_KEY,
+    STALWART_JMAP_URL: apiEnv.STALWART_JMAP_URL,
+    STALWART_SMTP_HOST: apiEnv.STALWART_SMTP_HOST,
+    STALWART_SMTP_PORT: apiEnv.STALWART_SMTP_PORT,
+    WEBHOOK_DEFAULT_SECRET: apiEnv.WEBHOOK_DEFAULT_SECRET,
+    REDIS_URL: apiEnv.REDIS_URL,
+  };
+  for (const [name, v] of Object.entries(optionalApi)) {
+    if (!v) continue;
+    console.log(`API production (opcional): ${name}`);
+    if (!envAdd('apps/api', name, v)) process.exit(1);
+  }
 
   for (const [name, v] of Object.entries(coreApi)) {
     if (!v) {

@@ -1,74 +1,117 @@
+"use client";
+
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/api/rest/generic";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import type { MetricsSnapshot } from "@hubmail/types";
+
+const WINDOWS = [
+  { value: 24, label: "Últimas 24 horas" },
+  { value: 24 * 7, label: "Últimos 7 dias" },
+  { value: 24 * 30, label: "Últimos 30 dias" },
+];
 
 export default function MetricsPage() {
+  const [hours, setHours] = useState(24);
+  const { data, isLoading } = useQuery<MetricsSnapshot>({
+    queryKey: ["metrics", hours],
+    queryFn: () =>
+      apiRequest<MetricsSnapshot>(`/api/metrics/workspace?hours=${hours}`),
+    refetchInterval: 60_000,
+  });
+
+  const score = data?.score ?? 0;
+  const scoreLabel =
+    score >= 95 ? "Excelente" : score >= 80 ? "Bom" : score >= 50 ? "A melhorar" : "Crítico";
+  const scoreTone =
+    score >= 95
+      ? "bg-emerald-500"
+      : score >= 80
+        ? "bg-lime-500"
+        : score >= 50
+          ? "bg-amber-500"
+          : "bg-red-500";
+
   return (
     <DashboardShell
       title="Metrics"
-      subtitle="Last 24 hours"
+      subtitle={data ? `Janela: ${data.windowHours}h · gerado ${new Date(data.generatedAt).toLocaleTimeString()}` : "…"}
       actions={
         <div className="flex flex-wrap gap-2">
           <select
+            value={hours}
+            onChange={(e) => setHours(Number(e.target.value))}
             className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm dark:border-hub-border dark:bg-hub-card dark:text-white"
-            defaultValue="24h"
           >
-            <option value="24h">Last 24 hours</option>
-          </select>
-          <select
-            className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm dark:border-hub-border dark:bg-hub-card dark:text-white"
-            defaultValue="tz"
-          >
-            <option value="tz">America/Sao_Paulo</option>
+            {WINDOWS.map((w) => (
+              <option key={w.value} value={w.value}>
+                {w.label}
+              </option>
+            ))}
           </select>
         </div>
       }
     >
-      <div className="mb-6 rounded-lg border border-emerald-800/40 bg-emerald-950/25 px-4 py-3 dark:bg-emerald-950/40">
-        <p className="text-sm font-medium text-emerald-100">Score: 100 — Excellent</p>
-        <div className="mt-2 h-1 overflow-hidden rounded-full bg-emerald-900/50">
-          <div className="h-full w-full rounded-full bg-emerald-400" />
+      <div className="mb-6 rounded-lg border border-neutral-200 p-4 dark:border-hub-border">
+        <p className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
+          Score: {score} — {scoreLabel}
+        </p>
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
+          <div
+            className={`h-full rounded-full ${scoreTone}`}
+            style={{ width: `${score}%` }}
+          />
         </div>
       </div>
 
       <p className="mb-8 text-sm text-neutral-600 dark:text-neutral-400">
-        <span className="font-medium text-neutral-900 dark:text-white">0</span> sent ·{" "}
-        <span className="font-medium text-neutral-900 dark:text-white">0</span> delivered ·{" "}
-        <span className="font-medium text-neutral-900 dark:text-white">0%</span> delivery ·{" "}
-        <span className="font-medium text-neutral-900 dark:text-white">0</span> received ·{" "}
-        <span className="font-medium text-neutral-900 dark:text-white">0</span> bounced ·{" "}
-        <span className="font-medium text-neutral-900 dark:text-white">0</span> complained ·{" "}
-        <span className="font-medium text-neutral-900 dark:text-white">0</span> rejected
+        {isLoading ? (
+          "A carregar métricas…"
+        ) : (
+          <>
+            <Kpi value={data?.sent ?? 0} label="enviados" /> ·{" "}
+            <Kpi value={data?.delivered ?? 0} label="entregues" /> ·{" "}
+            <Kpi value={`${data?.deliveryPct ?? 0}%`} label="taxa de entrega" /> ·{" "}
+            <Kpi value={data?.received ?? 0} label="recebidos" /> ·{" "}
+            <Kpi value={data?.bounced ?? 0} label="bounces" /> ·{" "}
+            <Kpi value={data?.complained ?? 0} label="spam reports" /> ·{" "}
+            <Kpi value={data?.rejected ?? 0} label="rejeitados" />
+          </>
+        )}
       </p>
 
-      <div className="rounded-lg border border-neutral-200 bg-neutral-50/50 p-6 dark:border-hub-border dark:bg-[#141414]">
-        <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Email activity</p>
-            <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">10-min email volume for the last 24 hours</p>
-          </div>
-        </div>
-        <div className="mb-6 flex flex-wrap gap-6 text-sm">
-          <span className="flex items-center gap-2 text-neutral-600 dark:text-neutral-400">
-            <span className="size-2 rounded-full bg-blue-500" /> Sent: 0
-          </span>
-          <span className="flex items-center gap-2 text-neutral-600 dark:text-neutral-400">
-            <span className="size-2 rounded-full bg-emerald-500" /> Received: 0
-          </span>
-          <span className="flex items-center gap-2 text-neutral-600 dark:text-neutral-400">
-            <span className="size-2 rounded-full bg-amber-500" /> Complained: 0
-          </span>
-          <span className="flex items-center gap-2 text-neutral-600 dark:text-neutral-400">
-            <span className="size-2 rounded-full bg-red-500" /> Bounced: 0
-          </span>
-        </div>
-        <div className="flex h-48 items-end justify-between gap-1 border-t border-neutral-200 pt-4 dark:border-hub-border">
-          {["4 PM", "8 PM", "12 AM", "4 AM", "8 AM", "12 PM", "4 PM"].map((t) => (
-            <div key={t} className="flex flex-1 flex-col items-center gap-2">
-              <div className="h-28 w-full max-w-[28px] rounded-sm bg-neutral-200/80 dark:bg-neutral-800/80" />
-              <span className="text-[10px] text-neutral-400 dark:text-neutral-600">{t}</span>
-            </div>
-          ))}
+      <div className="rounded-lg border border-neutral-200 p-6 dark:border-hub-border">
+        <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+          Volume de email
+        </p>
+        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+          Dados agregados do workspace — actualização a cada 60s.
+        </p>
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <Card label="Sent" value={data?.sent ?? 0} tone="text-blue-600" />
+          <Card label="Received" value={data?.received ?? 0} tone="text-emerald-600" />
+          <Card label="Bounced" value={data?.bounced ?? 0} tone="text-red-600" />
+          <Card label="Spam" value={data?.complained ?? 0} tone="text-amber-600" />
         </div>
       </div>
     </DashboardShell>
+  );
+}
+
+function Kpi({ value, label }: { value: number | string; label: string }) {
+  return (
+    <span>
+      <span className="font-medium text-neutral-900 dark:text-white">{value}</span> {label}
+    </span>
+  );
+}
+
+function Card({ value, label, tone }: { value: number; label: string; tone: string }) {
+  return (
+    <div className="rounded-md border border-neutral-200 p-3 text-center dark:border-hub-border">
+      <p className={`text-2xl font-semibold ${tone}`}>{value}</p>
+      <p className="text-xs uppercase tracking-wide text-neutral-500">{label}</p>
+    </div>
   );
 }
