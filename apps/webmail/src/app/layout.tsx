@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
+import { LocaleProvider } from "@/i18n/client";
+import { getServerLocale } from "@/i18n/server";
 import { HubmailQueryProvider } from "@/lib/query-client";
 import "./globals.css";
 
@@ -19,13 +21,17 @@ export const metadata: Metadata = {
   description: "Webmail and control plane for HubMail",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const locale = await getServerLocale();
+
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
+    <html lang={locale} className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
       <body className={`${geistSans.className} min-h-screen font-sans antialiased`}>
-        <ThemeProvider>
-          <HubmailQueryProvider>{children}</HubmailQueryProvider>
-        </ThemeProvider>
+        <LocaleProvider initialLocale={locale}>
+          <ThemeProvider>
+            <HubmailQueryProvider>{children}</HubmailQueryProvider>
+          </ThemeProvider>
+        </LocaleProvider>
       </body>
     </html>
   );

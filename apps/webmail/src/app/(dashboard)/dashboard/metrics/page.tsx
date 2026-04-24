@@ -4,15 +4,17 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/api/rest/generic";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { getLocaleDateFormat, useI18n } from "@/i18n/client";
 import type { MetricsSnapshot } from "@hubmail/types";
 
-const WINDOWS = [
-  { value: 24, label: "Últimas 24 horas" },
-  { value: 24 * 7, label: "Últimos 7 dias" },
-  { value: 24 * 30, label: "Últimos 30 dias" },
-];
-
 export default function MetricsPage() {
+  const { locale, messages } = useI18n();
+  const copy = messages.metrics;
+  const windows = [
+    { value: 24, label: copy.windows.last24h },
+    { value: 24 * 7, label: copy.windows.last7d },
+    { value: 24 * 30, label: copy.windows.last30d },
+  ];
   const [hours, setHours] = useState(24);
   const { data, isLoading } = useQuery<MetricsSnapshot>({
     queryKey: ["metrics", hours],
@@ -23,7 +25,13 @@ export default function MetricsPage() {
 
   const score = data?.score ?? 0;
   const scoreLabel =
-    score >= 95 ? "Excelente" : score >= 80 ? "Bom" : score >= 50 ? "A melhorar" : "Crítico";
+    score >= 95
+      ? copy.scoreLabels.excellent
+      : score >= 80
+        ? copy.scoreLabels.good
+        : score >= 50
+          ? copy.scoreLabels.improving
+          : copy.scoreLabels.critical;
   const scoreTone =
     score >= 95
       ? "bg-emerald-500"
@@ -35,8 +43,12 @@ export default function MetricsPage() {
 
   return (
     <DashboardShell
-      title="Metrics"
-      subtitle={data ? `Janela: ${data.windowHours}h · gerado ${new Date(data.generatedAt).toLocaleTimeString()}` : "…"}
+      title={copy.title}
+      subtitle={
+        data
+          ? `${copy.window}: ${data.windowHours}h · ${copy.generated} ${new Date(data.generatedAt).toLocaleTimeString(getLocaleDateFormat(locale))}`
+          : "…"
+      }
       actions={
         <div className="flex flex-wrap gap-2">
           <select
@@ -44,7 +56,7 @@ export default function MetricsPage() {
             onChange={(e) => setHours(Number(e.target.value))}
             className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm dark:border-hub-border dark:bg-hub-card dark:text-white"
           >
-            {WINDOWS.map((w) => (
+            {windows.map((w) => (
               <option key={w.value} value={w.value}>
                 {w.label}
               </option>
@@ -55,7 +67,7 @@ export default function MetricsPage() {
     >
       <div className="mb-6 rounded-lg border border-neutral-200 p-4 dark:border-hub-border">
         <p className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
-          Score: {score} — {scoreLabel}
+          {copy.score}: {score} — {scoreLabel}
         </p>
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
           <div
@@ -65,34 +77,34 @@ export default function MetricsPage() {
         </div>
       </div>
 
-      <p className="mb-8 text-sm text-neutral-600 dark:text-neutral-400">
+      <p className="mb-8 flex flex-wrap gap-x-2 gap-y-1 text-sm text-neutral-600 dark:text-neutral-400">
         {isLoading ? (
-          "A carregar métricas…"
+          copy.loading
         ) : (
           <>
-            <Kpi value={data?.sent ?? 0} label="enviados" /> ·{" "}
-            <Kpi value={data?.delivered ?? 0} label="entregues" /> ·{" "}
-            <Kpi value={`${data?.deliveryPct ?? 0}%`} label="taxa de entrega" /> ·{" "}
-            <Kpi value={data?.received ?? 0} label="recebidos" /> ·{" "}
-            <Kpi value={data?.bounced ?? 0} label="bounces" /> ·{" "}
-            <Kpi value={data?.complained ?? 0} label="spam reports" /> ·{" "}
-            <Kpi value={data?.rejected ?? 0} label="rejeitados" />
+            <Kpi value={data?.sent ?? 0} label={copy.sent} />
+            <Kpi value={data?.delivered ?? 0} label={copy.delivered} />
+            <Kpi value={`${data?.deliveryPct ?? 0}%`} label={copy.deliveryRate} />
+            <Kpi value={data?.received ?? 0} label={copy.received} />
+            <Kpi value={data?.bounced ?? 0} label={copy.bounced} />
+            <Kpi value={data?.complained ?? 0} label={copy.spamReports} />
+            <Kpi value={data?.rejected ?? 0} label={copy.rejected} />
           </>
         )}
       </p>
 
       <div className="rounded-lg border border-neutral-200 p-6 dark:border-hub-border">
         <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-          Volume de email
+          {copy.emailVolume}
         </p>
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          Dados agregados do workspace — actualização a cada 60s.
+          {copy.emailVolumeDescription}
         </p>
         <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-          <Card label="Sent" value={data?.sent ?? 0} tone="text-blue-600" />
-          <Card label="Received" value={data?.received ?? 0} tone="text-emerald-600" />
-          <Card label="Bounced" value={data?.bounced ?? 0} tone="text-red-600" />
-          <Card label="Spam" value={data?.complained ?? 0} tone="text-amber-600" />
+          <Card label={copy.cards.sent} value={data?.sent ?? 0} tone="text-blue-600" />
+          <Card label={copy.cards.received} value={data?.received ?? 0} tone="text-emerald-600" />
+          <Card label={copy.cards.bounced} value={data?.bounced ?? 0} tone="text-red-600" />
+          <Card label={copy.cards.spam} value={data?.complained ?? 0} tone="text-amber-600" />
         </div>
       </div>
     </DashboardShell>
@@ -101,7 +113,7 @@ export default function MetricsPage() {
 
 function Kpi({ value, label }: { value: number | string; label: string }) {
   return (
-    <span>
+    <span className="after:ml-2 after:text-neutral-300 after:content-['·'] last:after:content-none dark:after:text-neutral-700">
       <span className="font-medium text-neutral-900 dark:text-white">{value}</span> {label}
     </span>
   );

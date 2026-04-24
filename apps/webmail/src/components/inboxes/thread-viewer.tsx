@@ -3,6 +3,8 @@
 import { Star, Trash2, CornerUpLeft } from "lucide-react";
 import { useThread } from "@/hooks/use-mail";
 import type { ComposeDraft } from "@/components/inboxes/inbox-compose-provider";
+import { getLocaleDateFormat, useI18n } from "@/i18n/client";
+import type { AppLocale } from "@/i18n/config";
 import { cn } from "@/lib/utils";
 
 type ThreadViewerProps = {
@@ -14,10 +16,10 @@ type ThreadViewerProps = {
   onReply?: (draft: ComposeDraft) => void;
 };
 
-function formatDate(input: string | Date) {
+function formatDate(input: string | Date, locale: AppLocale) {
   const date = typeof input === "string" ? new Date(input) : input;
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString();
+  return date.toLocaleString(getLocaleDateFormat(locale));
 }
 
 export function ThreadViewer({
@@ -28,27 +30,30 @@ export function ThreadViewer({
   onToggleUnread,
   onReply,
 }: ThreadViewerProps) {
+  const { locale, messages } = useI18n();
+  const copy = messages.inboxes;
+  const composeCopy = messages.compose;
   const { data, isLoading, isError, refetch } = useThread(mailboxId, threadId);
 
   if (isLoading) {
-    return <p className="px-4 py-10 text-center text-sm text-neutral-500">A carregar thread…</p>;
+    return <p className="px-4 py-10 text-center text-sm text-neutral-500">{messages.common.loading}</p>;
   }
   if (isError || !data) {
     return (
       <div className="flex flex-col items-center gap-3 p-10 text-center text-sm text-neutral-500">
-        Falha ao carregar a thread.
+        {copy.loadError}
         <button
           type="button"
           onClick={() => refetch()}
           className="rounded-md border border-neutral-200 px-3 py-1.5 text-xs font-medium dark:border-hub-border"
         >
-          Tentar de novo
+          {copy.refresh}
         </button>
       </div>
     );
   }
 
-  const subject = data.messages[0]?.subject ?? "(sem assunto)";
+  const subject = data.messages[0]?.subject ?? copy.noSubject;
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-start justify-between gap-3 border-b border-neutral-200 px-4 py-3 dark:border-hub-border">
@@ -57,7 +62,7 @@ export function ThreadViewer({
             {subject}
           </h2>
           <p className="mt-0.5 text-xs text-neutral-500">
-            {data.messages.length} mensagem{data.messages.length === 1 ? "" : "s"}
+            {data.messages.length} {data.messages.length === 1 ? copy.messages : copy.messagesPlural}
           </p>
         </div>
       </header>
@@ -71,17 +76,17 @@ export function ThreadViewer({
               className="rounded-lg border border-neutral-200 bg-neutral-50/50 p-4 dark:border-hub-border dark:bg-[#0f0f0f]"
             >
               <header className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                    {message.from.name || message.from.email || "(sem remetente)"}
+                    {message.from.name || message.from.email || copy.noSender}
                   </p>
                   <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
                     {message.from.email} →{" "}
-                    {message.to.map((a) => a.email).join(", ") || "(sem destinatário)"}
+                    {message.to.map((a) => a.email).join(", ") || copy.noRecipient}
                   </p>
                 </div>
-                <div className="flex shrink-0 items-center gap-1 text-xs text-neutral-500">
-                  <span>{formatDate(message.receivedAt)}</span>
+                <div className="flex w-full flex-wrap items-center justify-end gap-1 text-xs text-neutral-500 sm:w-auto sm:shrink-0">
+                  <span className="mr-auto sm:mr-0">{formatDate(message.receivedAt, locale)}</span>
                   <button
                     type="button"
                     onClick={() => onToggleStar?.(message.id, !starred)}
@@ -100,7 +105,7 @@ export function ThreadViewer({
                     onClick={() => onToggleUnread?.(message.id, !unread)}
                     className="rounded px-1.5 py-1 text-[10px] font-medium text-neutral-500 hover:bg-neutral-100 dark:hover:bg-white/10"
                   >
-                    {unread ? "Marcar lido" : "Marcar não lido"}
+                    {unread ? copy.markRead : copy.markUnread}
                   </button>
                   <button
                     type="button"
@@ -117,15 +122,15 @@ export function ThreadViewer({
                       onReply?.({
                         to: replyTo,
                         subject,
-                        text: `\n\nEm ${new Date(message.receivedAt).toLocaleString()}, ${
+                        text: `\n\nEm ${new Date(message.receivedAt).toLocaleString(getLocaleDateFormat(locale))}, ${
                           message.from.name || message.from.email
-                        } escreveu:\n${quoted}`,
+                        } ${composeCopy.wrote}:\n${quoted}`,
                         inReplyTo: message.inReplyTo ?? message.id,
                         references: message.references,
                       });
                     }}
                     className="rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-white/10"
-                    aria-label="Reply"
+                    aria-label={copy.reply}
                   >
                     <CornerUpLeft className="size-4" />
                   </button>
@@ -133,7 +138,7 @@ export function ThreadViewer({
                     type="button"
                     onClick={() => onDelete?.(message.id)}
                     className="rounded p-1 text-neutral-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"
-                    aria-label="Delete"
+                    aria-label={copy.delete}
                   >
                     <Trash2 className="size-4" />
                   </button>
@@ -143,7 +148,7 @@ export function ThreadViewer({
               <div className="mt-3 text-sm text-neutral-800 dark:text-neutral-200">
                 {message.bodyHtml ? (
                   <div
-                    className="prose prose-sm max-w-none dark:prose-invert"
+                    className="prose prose-sm max-w-none overflow-x-auto dark:prose-invert"
                     dangerouslySetInnerHTML={{ __html: message.bodyHtml }}
                   />
                 ) : message.bodyText ? (
@@ -151,7 +156,7 @@ export function ThreadViewer({
                     {message.bodyText}
                   </pre>
                 ) : (
-                  <p className="text-neutral-500">(sem corpo)</p>
+                  <p className="text-neutral-500">{copy.noBody}</p>
                 )}
               </div>
 

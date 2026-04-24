@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { usePathname } from "next/navigation";
+import { useI18n } from "@/i18n/client";
 import { cn } from "@/lib/utils";
 
 function titleCase(s: string) {
@@ -23,22 +24,27 @@ export function DashboardShell({
   breadcrumb?: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const { messages } = useI18n();
 
   const crumbs = useMemo(() => {
     const parts = pathname.split("/").filter(Boolean);
-    const out: { label: string; href?: string }[] = [{ label: "Dashboard", href: "/dashboard/overview" }];
+    const breadcrumbs = messages.dashboard.breadcrumbs;
+    const out: { label: string; href?: string }[] = [{ label: messages.dashboard.dashboard, href: "/dashboard/overview" }];
     if (parts[0] === "dashboard" && parts[1]) {
-      out.push({ label: titleCase(parts[1]), href: `/dashboard/${parts[1]}` });
+      out.push({
+        label: breadcrumbs[parts[1] as keyof typeof breadcrumbs] ?? titleCase(parts[1]),
+        href: `/dashboard/${parts[1]}`,
+      });
       if (parts[2]) {
-        out.push({ label: titleCase(parts[2]) });
+        out.push({ label: breadcrumbs[parts[2] as keyof typeof breadcrumbs] ?? titleCase(parts[2]) });
       }
     }
     return out;
-  }, [pathname]);
+  }, [messages, pathname]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-[#0a0a0a]">
-      <header className="border-b border-neutral-200 px-6 py-5 dark:border-hub-border lg:px-8">
+      <header className="border-b border-neutral-200 px-4 py-4 dark:border-hub-border sm:px-6 sm:py-5 lg:px-8">
         {breadcrumb ? (
           <div className="mb-2 text-xs text-neutral-500 dark:text-neutral-500">{breadcrumb}</div>
         ) : (
@@ -60,16 +66,16 @@ export function DashboardShell({
         </nav>
         )}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
+          <div className="min-w-0">
             {title && (
-              <h1 className="text-2xl font-semibold tracking-tight text-neutral-950 dark:text-white">{title}</h1>
+              <h1 className="truncate text-xl font-semibold tracking-tight text-neutral-950 dark:text-white sm:text-2xl">{title}</h1>
             )}
             {subtitle && <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{subtitle}</p>}
           </div>
-          {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
+          {actions ? <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0">{actions}</div> : null}
         </div>
       </header>
-      <div className={cn("flex-1 overflow-auto px-6 py-6 lg:px-8")}>{children}</div>
+      <div className={cn("flex-1 overflow-auto px-4 py-4 sm:px-6 sm:py-6 lg:px-8")}>{children}</div>
     </div>
   );
 }

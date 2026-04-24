@@ -12,9 +12,9 @@ export default async function DashboardRootLayout({ children }: { children: Reac
 
   return (
     <WorkspaceGate>
-      <div className="flex min-h-screen">
+      <div className="flex min-h-screen bg-white dark:bg-[#0a0a0a]">
         <AppSidebar userLabel={userLabel} />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col pt-14 lg:pt-0">{children}</div>
       </div>
     </WorkspaceGate>
   );

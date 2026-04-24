@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { useI18n } from "@/i18n/client";
 import {
   useAutomations,
   useCreateAutomation,
@@ -11,13 +12,10 @@ import {
 } from "@/hooks/use-automations";
 import type { AutomationTrigger } from "@hubmail/types";
 
-const TRIGGER_LABELS: Record<AutomationTrigger, string> = {
-  MAIL_RECEIVED: "Email recebido",
-  MAIL_SENT: "Email enviado",
-  MAIL_BOUNCED: "Email devolvido",
-};
-
 export default function WebhooksPage() {
+  const { messages } = useI18n();
+  const copy = messages.webhooks;
+  const triggerLabels: Record<AutomationTrigger, string> = copy.triggers;
   const { data: automations, isLoading } = useAutomations();
   const create = useCreateAutomation();
   const update = useUpdateAutomation();
@@ -33,7 +31,7 @@ export default function WebhooksPage() {
     e.preventDefault();
     setError(null);
     if (!newName.trim() || !newUrl.trim()) {
-      setError("Nome e URL são obrigatórios");
+      setError(copy.requiredNameUrl);
       return;
     }
     try {
@@ -53,33 +51,30 @@ export default function WebhooksPage() {
       setNewUrl("");
       setNewSecret("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao criar webhook");
+      setError(err instanceof Error ? err.message : copy.createError);
     }
   }
 
   return (
     <DashboardShell
-      title="Webhooks & Automations"
-      subtitle="Encaminhe eventos de email para outros serviços."
+      title={copy.title}
+      subtitle={copy.subtitle}
     >
       <section className="mb-8 rounded-lg border border-neutral-200 p-4 dark:border-hub-border">
         <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-          Novo endpoint
+          {copy.newEndpoint}
         </h2>
-        <form
-          onSubmit={handleCreate}
-          className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_160px_auto]"
-        >
+        <form onSubmit={handleCreate} className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_160px_auto]">
           <input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            placeholder="Nome (e.g. CRM principal)"
+            placeholder={copy.namePlaceholder}
             className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-hub-border dark:bg-hub-card"
           />
           <input
             value={newUrl}
             onChange={(e) => setNewUrl(e.target.value)}
-            placeholder="https://meu-crm.com/webhook"
+            placeholder={copy.urlPlaceholder}
             className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-hub-border dark:bg-hub-card"
             type="url"
           />
@@ -88,25 +83,25 @@ export default function WebhooksPage() {
             onChange={(e) => setNewTrigger(e.target.value as AutomationTrigger)}
             className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-hub-border dark:bg-hub-card"
           >
-            {(Object.keys(TRIGGER_LABELS) as AutomationTrigger[]).map((t) => (
+            {(Object.keys(triggerLabels) as AutomationTrigger[]).map((t) => (
               <option key={t} value={t}>
-                {TRIGGER_LABELS[t]}
+                {triggerLabels[t]}
               </option>
             ))}
           </select>
           <button
             type="submit"
             disabled={create.isPending}
-            className="flex items-center gap-1.5 rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-neutral-900"
+            className="flex items-center justify-center gap-1.5 rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-neutral-900"
           >
             <Plus className="size-4" />
-            {create.isPending ? "…" : "Adicionar"}
+            {create.isPending ? "…" : copy.add}
           </button>
           <input
             value={newSecret}
             onChange={(e) => setNewSecret(e.target.value)}
-            placeholder="Secret HMAC (opcional — assina como sha256=…)"
-            className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm sm:col-span-4 dark:border-hub-border dark:bg-hub-card"
+            placeholder={copy.secretPlaceholder}
+            className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm md:col-span-4 dark:border-hub-border dark:bg-hub-card"
           />
         </form>
         {error ? (
@@ -115,15 +110,15 @@ export default function WebhooksPage() {
       </section>
 
       <section className="overflow-hidden rounded-lg border border-neutral-200 dark:border-hub-border">
-        <header className="flex border-b border-neutral-200 bg-neutral-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:border-hub-border dark:bg-[#141414] dark:text-neutral-400">
-          <span className="flex-1">Automation</span>
-          <span className="w-40">Trigger</span>
-          <span className="w-28">Estado</span>
+        <header className="hidden border-b border-neutral-200 bg-neutral-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:border-hub-border dark:bg-[#141414] dark:text-neutral-400 md:flex">
+          <span className="flex-1">{copy.headers.automation}</span>
+          <span className="w-40">{copy.headers.trigger}</span>
+          <span className="w-28">{copy.headers.status}</span>
           <span className="w-12" aria-label="actions" />
         </header>
         {isLoading ? (
           <p className="px-4 py-12 text-center text-sm text-neutral-500">
-            A carregar…
+            {messages.common.loading}
           </p>
         ) : automations && automations.length > 0 ? (
           <ul className="divide-y divide-neutral-200 dark:divide-hub-border">
@@ -135,18 +130,18 @@ export default function WebhooksPage() {
               return (
                 <li
                   key={auto.id}
-                  className="flex items-center gap-3 px-4 py-3 text-sm"
+                  className="flex flex-col gap-3 px-4 py-3 text-sm md:flex-row md:items-center"
                 >
-                  <div className="flex-1 min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="font-medium text-neutral-900 dark:text-neutral-100">
                       {auto.name}
                     </p>
                     <p className="truncate text-xs text-neutral-500">{url}</p>
                   </div>
-                  <span className="w-40 text-xs text-neutral-600 dark:text-neutral-300">
-                    {TRIGGER_LABELS[auto.trigger]}
+                  <span className="w-full text-xs text-neutral-600 dark:text-neutral-300 md:w-40">
+                    {triggerLabels[auto.trigger]}
                   </span>
-                  <label className="flex w-28 items-center gap-2 text-xs">
+                  <label className="flex w-full items-center gap-2 text-xs md:w-28">
                     <input
                       type="checkbox"
                       checked={auto.enabled}
@@ -157,13 +152,13 @@ export default function WebhooksPage() {
                         })
                       }
                     />
-                    {auto.enabled ? "ativa" : "pausada"}
+                    {auto.enabled ? messages.common.active : messages.common.paused}
                   </label>
                   <button
                     type="button"
                     onClick={() => remove.mutate(auto.id)}
                     className="rounded p-1 text-neutral-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"
-                    aria-label="Delete automation"
+                    aria-label={copy.deleteAutomation}
                   >
                     <Trash2 className="size-4" />
                   </button>
@@ -173,7 +168,7 @@ export default function WebhooksPage() {
           </ul>
         ) : (
           <p className="px-4 py-12 text-center text-sm text-neutral-500">
-            Sem automações ainda. Crie a primeira acima.
+            {copy.empty}
           </p>
         )}
       </section>

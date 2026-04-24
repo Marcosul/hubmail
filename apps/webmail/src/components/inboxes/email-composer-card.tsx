@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Paperclip, Send, X } from "lucide-react";
 import { useSendMail } from "@/hooks/use-mail";
 import type { ComposeDraft } from "@/components/inboxes/inbox-compose-provider";
+import { useI18n } from "@/i18n/client";
 import { cn } from "@/lib/utils";
 
 type EmailComposerCardProps = {
@@ -28,6 +29,8 @@ export function EmailComposerCard({
   mailboxId,
   initialDraft,
 }: EmailComposerCardProps) {
+  const { messages } = useI18n();
+  const copy = messages.compose;
   const [to, setTo] = useState(initialDraft?.to ?? "");
   const [cc, setCc] = useState(initialDraft?.cc ?? "");
   const [subject, setSubject] = useState(initialDraft?.subject ?? "");
@@ -39,12 +42,12 @@ export function EmailComposerCard({
   async function handleSend() {
     setError(null);
     if (!mailboxId) {
-      setError("Selecione uma mailbox antes de enviar.");
+      setError(copy.selectMailbox);
       return;
     }
     const recipients = splitAddresses(to);
     if (recipients.length === 0) {
-      setError("Adicione pelo menos um destinatário.");
+      setError(copy.addRecipient);
       return;
     }
     try {
@@ -52,14 +55,14 @@ export function EmailComposerCard({
         mailboxId,
         to: recipients,
         cc: splitAddresses(cc),
-        subject: subject.trim() || "(sem assunto)",
+        subject: subject.trim() || messages.inboxes.noSubject,
         text: body,
         inReplyTo: initialDraft?.inReplyTo,
         references: initialDraft?.references,
       });
       onClose?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao enviar");
+      setError(err instanceof Error ? err.message : copy.sendError);
     }
   }
 
@@ -71,17 +74,17 @@ export function EmailComposerCard({
         "flex h-full min-h-[320px] flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white dark:border-hub-border dark:bg-[#0f0f0f]",
         className,
       )}
-      aria-label="Compose email"
+      aria-label={copy.compose}
     >
       <header className="flex items-center justify-between border-b border-neutral-200 px-3 py-2 dark:border-hub-border">
         <h2 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-          {initialDraft?.inReplyTo ? "Responder" : "New Message"}
+          {initialDraft?.inReplyTo ? copy.reply : copy.newMessage}
         </h2>
         <div className="flex items-center gap-1">
           <button
             type="button"
             className="rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-white/10"
-            aria-label="Close compose"
+            aria-label={copy.close}
             onClick={onClose}
           >
             <X className="size-4" />
@@ -92,7 +95,7 @@ export function EmailComposerCard({
       <div className="space-y-2 border-b border-neutral-200 px-3 py-2 dark:border-hub-border">
         <div className="flex items-center gap-2">
           <input
-            placeholder="To"
+            placeholder={copy.to}
             value={to}
             onChange={(e) => setTo(e.target.value)}
             className="h-8 w-full rounded border border-transparent bg-transparent px-1 text-sm outline-none placeholder:text-neutral-400 focus:border-neutral-300 dark:focus:border-white/20"
@@ -116,7 +119,7 @@ export function EmailComposerCard({
           />
         ) : null}
         <input
-          placeholder="Subject"
+          placeholder={copy.subject}
           value={subject}
           onChange={(e) => setSubject(e.target.value)}
           className="h-8 w-full rounded border border-transparent bg-transparent px-1 text-sm outline-none placeholder:text-neutral-400 focus:border-neutral-300 dark:focus:border-white/20"
@@ -124,7 +127,7 @@ export function EmailComposerCard({
       </div>
 
       <textarea
-        placeholder="Write your message..."
+        placeholder={copy.body}
         value={body}
         onChange={(e) => setBody(e.target.value)}
         className={cn(
@@ -147,13 +150,13 @@ export function EmailComposerCard({
           className="inline-flex items-center gap-1.5 rounded bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-800 disabled:opacity-60 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-100"
         >
           <Send className="size-3.5" />
-          {sending ? "A enviar…" : "Send"}
+          {sending ? copy.sending : copy.send}
         </button>
         <button
           type="button"
           className="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-white/10"
-          aria-label="Attach file"
-          title="Anexos em breve"
+          aria-label={copy.attach}
+          title={copy.attachmentsSoon}
           disabled
         >
           <Paperclip className="size-4" />

@@ -1,25 +1,29 @@
 import { KeyRound } from "lucide-react";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { getMessages } from "@/i18n/messages";
+import { getServerLocale } from "@/i18n/server";
 
-export default function ApiKeysPage() {
+export default async function ApiKeysPage() {
+  const copy = getMessages(await getServerLocale()).apiKeys;
+
   return (
     <DashboardShell
-      title="API keys"
-      subtitle="Manage API keys for authenticating with the HubMail API."
+      title={copy.title}
+      subtitle={copy.subtitle}
       actions={
         <button
           type="button"
-          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-neutral-900"
+          className="w-full rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white sm:w-auto dark:bg-white dark:text-neutral-900"
         >
-          + Create API key
+          {copy.create}
         </button>
       }
     >
-      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-neutral-200 py-24 dark:border-hub-border">
+      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-neutral-200 px-4 py-16 text-center dark:border-hub-border sm:py-24">
         <KeyRound className="mb-4 size-12 text-neutral-300 dark:text-neutral-600" aria-hidden />
-        <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">No API keys configured</h2>
+        <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">{copy.emptyTitle}</h2>
         <p className="mt-2 max-w-md text-center text-sm text-neutral-500 dark:text-neutral-400">
-          Create your first API key to start using the HubMail API.
+          {copy.emptyDescription}
         </p>
       </div>
     </DashboardShell>

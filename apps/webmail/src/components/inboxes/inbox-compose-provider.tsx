@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useState } from "react";
 import { Pencil } from "lucide-react";
 import { EmailComposerCard } from "@/components/inboxes/email-composer-card";
+import { useI18n } from "@/i18n/client";
 import { cn } from "@/lib/utils";
 
 export type ComposeDraft = {
@@ -58,6 +59,7 @@ const composeTriggerClass =
 
 export function InboxComposeTrigger({ className }: { className?: string }) {
   const { openCompose } = useInboxCompose();
+  const { messages } = useI18n();
   return (
     <button
       type="button"
@@ -65,13 +67,14 @@ export function InboxComposeTrigger({ className }: { className?: string }) {
       className={cn(composeTriggerClass, className)}
     >
       <Pencil className="size-4" aria-hidden />
-      Compose
+      {messages.compose.compose}
     </button>
   );
 }
 
 export function InboxComposeDock({ mailboxId }: { mailboxId?: string }) {
   const { open, draft, closeCompose } = useInboxCompose();
+  const { messages } = useI18n();
   if (!open) {
     return null;
   }
@@ -80,13 +83,13 @@ export function InboxComposeDock({ mailboxId }: { mailboxId?: string }) {
       <button
         type="button"
         className="fixed inset-0 z-40 cursor-default bg-black/30 dark:bg-black/50"
-        aria-label="Close compose"
+        aria-label={messages.compose.close}
         onClick={closeCompose}
       />
       <div
         className="fixed right-0 bottom-0 z-50 w-full p-3 sm:bottom-4 sm:right-4 sm:max-w-md sm:p-0"
         role="dialog"
-        aria-label="New message"
+        aria-label={messages.compose.dialog}
       >
         <EmailComposerCard
           onClose={closeCompose}

@@ -4,11 +4,14 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Mail } from "lucide-react";
+import { useI18n } from "@/i18n/client";
 import { buildOAuthCallbackRedirectTo } from "@/lib/oauth-app-url";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser-client";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 export default function LoginPage() {
+  const { messages } = useI18n();
+  const copy = messages.login;
   const searchParams = useSearchParams();
   const next = searchParams.get("next") ?? "/dashboard/overview";
   const [error, setError] = useState<string | null>(null);
@@ -28,11 +31,11 @@ export default function LoginPage() {
       });
 
       if (signInError) {
-        setError(mapGoogleOAuthError(signInError.message));
+        setError(mapGoogleOAuthError(signInError.message, copy.googleProviderInactive));
         return;
       }
     } catch {
-      setError("Could not start Google sign in. Try again.");
+      setError(copy.startError);
     } finally {
       setLoading(false);
     }
@@ -43,12 +46,9 @@ export default function LoginPage() {
       <div className="flex min-h-screen flex-col bg-neutral-950 text-white">
         <div className="flex flex-1 flex-col justify-center px-4 py-12 sm:px-6">
           <div className="mx-auto w-full max-w-md rounded-xl border border-red-400/30 bg-red-500/10 p-6">
-            <h1 className="text-xl font-semibold">Supabase not configured</h1>
+            <h1 className="text-xl font-semibold">{copy.supabaseTitle}</h1>
             <p className="mt-2 text-sm text-neutral-300">
-              Add <code className="rounded bg-white/10 px-1 py-0.5">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
-              <code className="rounded bg-white/10 px-1 py-0.5">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> (or the Vercel
-              Supabase integration names <code className="rounded bg-white/10 px-1 py-0.5">NEXT_PUBLIC_STORAGE_*</code>)
-              in the webmail environment.
+              {copy.supabaseDescription}
             </p>
           </div>
         </div>
@@ -66,8 +66,8 @@ export default function LoginPage() {
             </div>
             <span className="font-semibold">HubMail</span>
           </Link>
-          <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
-          <p className="mt-2 text-sm text-neutral-400">Continue with your Google account.</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{copy.title}</h1>
+          <p className="mt-2 text-sm text-neutral-400">{copy.subtitle}</p>
 
           <div className="mt-8 space-y-5">
             {error ? <p className="text-sm text-red-400">{error}</p> : null}
@@ -78,7 +78,7 @@ export default function LoginPage() {
               className="flex w-full items-center justify-center gap-2 rounded-md bg-white py-2.5 text-sm font-semibold text-neutral-950 hover:bg-neutral-200 disabled:opacity-60"
             >
               <GoogleIcon />
-              {loading ? "Connecting..." : "Continue with Google"}
+              {loading ? copy.connecting : copy.continueWithGoogle}
             </button>
           </div>
         </div>
@@ -87,14 +87,14 @@ export default function LoginPage() {
   );
 }
 
-function mapGoogleOAuthError(message: string) {
+function mapGoogleOAuthError(message: string, providerInactiveMessage: string) {
   const lower = message.toLowerCase();
   if (
     lower.includes("not enabled") ||
     lower.includes("unsupported provider") ||
     lower.includes("validation_failed")
   ) {
-    return "Google provider is not active in this Supabase project.";
+    return providerInactiveMessage;
   }
 
   return message;
