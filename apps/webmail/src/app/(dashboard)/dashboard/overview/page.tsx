@@ -68,8 +68,8 @@ export default function OverviewPage() {
             </span>
           </div>
           <div className="flex h-56 items-end justify-between gap-1 border-t border-neutral-200 pt-4 dark:border-hub-border">
-            {["4 PM", "8 PM", "12 AM", "4 AM", "8 AM", "12 PM", "4 PM"].map((t) => (
-              <div key={t} className="flex flex-1 flex-col items-center gap-2">
+            {["4 PM", "8 PM", "12 AM", "4 AM", "8 AM", "12 PM", "4 PM"].map((t, index) => (
+              <div key={`${t}-${index}`} className="flex flex-1 flex-col items-center gap-2">
                 <div className="h-32 w-full max-w-[32px] rounded-sm bg-neutral-200/80 dark:bg-neutral-800/80" />
                 <span className="text-[10px] text-neutral-400 dark:text-neutral-600">{t}</span>
               </div>

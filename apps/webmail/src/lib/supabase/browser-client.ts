@@ -8,7 +8,7 @@ export function createSupabaseBrowserClient() {
   const env = getSupabaseEnvOrNull();
   if (!env) {
     throw new Error(
-      "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in webmail env.",
+      "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and anon key (or NEXT_PUBLIC_STORAGE_* from Vercel) in webmail env.",
     );
   }
 

@@ -41,10 +41,34 @@ export class AuthService {
 
   constructor(private readonly config: ConfigService) {}
 
+  private supabaseProjectUrl(): string {
+    const u =
+      this.config.get<string>('SUPABASE_URL')?.trim() ||
+      this.config.get<string>('STORAGE_SUPABASE_URL')?.trim();
+    if (!u) {
+      throw new BadGatewayException('Defina SUPABASE_URL ou STORAGE_SUPABASE_URL no .env');
+    }
+    return u;
+  }
+
+  private supabaseServiceKey(): string {
+    const s =
+      this.config.get<string>('SUPABASE_SERVICE_ROLE_KEY')?.trim() ||
+      this.config.get<string>('STORAGE_SUPABASE_SERVICE_ROLE_KEY')?.trim();
+    if (!s) {
+      throw new BadGatewayException(
+        'Defina SUPABASE_SERVICE_ROLE_KEY ou STORAGE_SUPABASE_SERVICE_ROLE_KEY no .env',
+      );
+    }
+    return s;
+  }
+
   private userAuthClient(): SupabaseClient {
-    const url = this.config.getOrThrow<string>('SUPABASE_URL');
+    const url = this.supabaseProjectUrl();
     const anon = this.config.get<string>('SUPABASE_ANON_KEY')?.trim();
-    const service = this.config.get<string>('SUPABASE_SERVICE_ROLE_KEY')?.trim();
+    const service =
+      this.config.get<string>('SUPABASE_SERVICE_ROLE_KEY')?.trim() ||
+      this.config.get<string>('STORAGE_SUPABASE_SERVICE_ROLE_KEY')?.trim();
     const key = anon || service;
     if (!key) {
       throw new BadGatewayException(
@@ -55,8 +79,8 @@ export class AuthService {
   }
 
   private adminClient(): SupabaseClient {
-    const url = this.config.getOrThrow<string>('SUPABASE_URL');
-    const service = this.config.getOrThrow<string>('SUPABASE_SERVICE_ROLE_KEY');
+    const url = this.supabaseProjectUrl();
+    const service = this.supabaseServiceKey();
     return createClient(url, service);
   }
 

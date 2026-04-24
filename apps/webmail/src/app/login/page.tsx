@@ -46,8 +46,9 @@ export default function LoginPage() {
             <h1 className="text-xl font-semibold">Supabase not configured</h1>
             <p className="mt-2 text-sm text-neutral-300">
               Add <code className="rounded bg-white/10 px-1 py-0.5">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
-              <code className="rounded bg-white/10 px-1 py-0.5">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in the webmail
-              environment.
+              <code className="rounded bg-white/10 px-1 py-0.5">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> (or the Vercel
+              Supabase integration names <code className="rounded bg-white/10 px-1 py-0.5">NEXT_PUBLIC_STORAGE_*</code>)
+              in the webmail environment.
             </p>
           </div>
         </div>
