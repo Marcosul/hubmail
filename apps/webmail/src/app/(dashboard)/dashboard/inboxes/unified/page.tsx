@@ -131,13 +131,13 @@ function UnifiedInboxContent() {
                     {activeMailbox.address}
                   </div>
                   <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
-                    <div className="w-full sm:hidden">
+                    <div className="w-full lg:hidden">
                       <InboxComposeTrigger />
                     </div>
                     <select
                       value={currentFolderId}
                       onChange={(event) => setFolderId(event.target.value)}
-                      className="min-w-0 flex-1 rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-hub-border dark:bg-hub-card dark:text-white sm:hidden"
+                      className="min-w-0 flex-1 rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-hub-border dark:bg-hub-card dark:text-white lg:hidden"
                       aria-label={copy.labels}
                     >
                       {sortedFolders.map((folder) => (
@@ -149,7 +149,7 @@ function UnifiedInboxContent() {
                     <button
                       type="button"
                       onClick={() => refetch()}
-                      className="rounded-md border border-neutral-200 px-2 py-1.5 text-xs text-neutral-600 dark:border-hub-border dark:text-neutral-300 sm:hidden"
+                      className="rounded-md border border-neutral-200 px-2 py-1.5 text-xs text-neutral-600 dark:border-hub-border dark:text-neutral-300 lg:hidden"
                     >
                       {copy.refresh}
                     </button>
