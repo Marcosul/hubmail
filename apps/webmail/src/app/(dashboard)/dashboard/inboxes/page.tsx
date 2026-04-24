@@ -37,7 +37,7 @@ export default function InboxesPage() {
             href="/dashboard/inboxes/smtp"
             className="text-xs font-semibold uppercase tracking-wide text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
           >
-            SMTP/IMAP
+            {messages.smtp.title}
           </Link>
           <Link
             href="/dashboard/inboxes/new"

@@ -43,7 +43,14 @@ export function LocaleProvider({
   initialLocale: AppLocale;
   children: ReactNode;
 }) {
-  const [locale, setLocaleState] = useState<AppLocale>(() => readLocaleFromBrowser() ?? initialLocale);
+  const [locale, setLocaleState] = useState<AppLocale>(initialLocale);
+
+  useEffect(() => {
+    const browserLocale = readLocaleFromBrowser();
+    if (browserLocale && browserLocale !== initialLocale) {
+      setLocaleState(browserLocale);
+    }
+  }, [initialLocale]);
 
   useEffect(() => {
     persistLocale(locale);
