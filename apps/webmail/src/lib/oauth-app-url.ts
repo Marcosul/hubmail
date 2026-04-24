@@ -34,7 +34,21 @@ function getOAuthRedirectOverride(): string | null {
   }
 }
 
+/**
+ * In production, never rely on NEXT_PUBLIC_* values baked in at build time only:
+ * the OAuth redirect must match the host the user is on (e.g. hubmail.to), or
+ * Supabase may fall back to the project Site URL (often localhost:3000).
+ */
 export function buildOAuthCallbackRedirectTo(): string {
+  if (typeof window !== "undefined") {
+    const { hostname, origin } = window.location;
+    const isLocal =
+      hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+    if (!isLocal) {
+      return new URL("/auth/callback", `${origin}/`).toString();
+    }
+  }
+
   const override = getOAuthRedirectOverride();
   if (override) {
     return override;
