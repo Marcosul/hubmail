@@ -28,7 +28,7 @@ import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/api/rest/generic";
 import { SUPPORTED_LOCALES, type AppLocale } from "@/i18n/config";
-import { useI18n } from "@/i18n/client";
+import { getLocaleLabel, useI18n } from "@/i18n/client";
 
 const nav = [
   { href: "/dashboard/overview", labelKey: "overview", icon: LayoutDashboard },
@@ -41,12 +41,6 @@ const nav = [
   { href: "/dashboard/metrics", labelKey: "metrics", icon: BarChart3 },
   { href: "/dashboard/pods", labelKey: "pods", icon: Leaf },
 ] as const;
-
-const localeLabels: Record<AppLocale, string> = {
-  "pt-BR": "Portugues (Brasil)",
-  "en-US": "English",
-  "es-ES": "Espanol",
-};
 
 type AppSidebarProps = {
   userLabel: string;
@@ -207,7 +201,7 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
             >
               {SUPPORTED_LOCALES.map((item) => (
                 <option key={item} value={item}>
-                  {localeLabels[item]}
+                  {getLocaleLabel(item)}
                 </option>
               ))}
             </select>

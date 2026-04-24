@@ -160,7 +160,7 @@ function Content({ inboxId, folderSlug, threadId }: InboxMailViewProps) {
               <span className="text-neutral-400">&gt;</span> {folderLabel}
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <div className="w-full sm:hidden">
+              <div className="w-full lg:hidden">
                 <InboxComposeTrigger />
               </div>
               <select
@@ -171,7 +171,7 @@ function Content({ inboxId, folderSlug, threadId }: InboxMailViewProps) {
                   const slug = (folder.role ?? folder.name.toLowerCase().replace(/\s+/g, "-")) || "inbox";
                   router.push(inboxFolderHref(mailbox?.id ?? inboxId, slug));
                 }}
-                className="min-w-0 flex-1 rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-hub-border dark:bg-hub-card dark:text-white sm:hidden"
+                className="min-w-0 flex-1 rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-hub-border dark:bg-hub-card dark:text-white lg:hidden"
                 aria-label={copy.labels}
               >
                 {sortedFolders.map((folder) => (
@@ -183,7 +183,7 @@ function Content({ inboxId, folderSlug, threadId }: InboxMailViewProps) {
               <button
                 type="button"
                 onClick={() => refetch()}
-                className="rounded-md border border-neutral-200 px-2 py-1.5 text-xs text-neutral-600 dark:border-hub-border dark:text-neutral-300 sm:hidden"
+                className="rounded-md border border-neutral-200 px-2 py-1.5 text-xs text-neutral-600 dark:border-hub-border dark:text-neutral-300 lg:hidden"
               >
                 {copy.refresh}
               </button>

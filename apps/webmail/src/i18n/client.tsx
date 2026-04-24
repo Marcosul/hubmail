@@ -47,6 +47,7 @@ export function LocaleProvider({
 
   useEffect(() => {
     persistLocale(locale);
+    document.documentElement.lang = locale;
   }, [locale]);
 
   const value = useMemo<LocaleContextValue>(
@@ -77,10 +78,10 @@ export function useI18n() {
   return { locale, setLocale, messages };
 }
 
-export function useLocaleLabel(locale: AppLocale): string {
+export function getLocaleLabel(locale: AppLocale): string {
   if (locale === "en-US") return "English";
-  if (locale === "es-ES") return "Espanol";
-  return "Portugues (Brasil)";
+  if (locale === "es-ES") return "Español (España)";
+  return "Português (Brasil)";
 }
 
 export function getLocaleDateFormat(locale: AppLocale): string {

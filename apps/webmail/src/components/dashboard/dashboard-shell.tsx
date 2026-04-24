@@ -48,7 +48,7 @@ export function DashboardShell({
         {breadcrumb ? (
           <div className="mb-2 text-xs text-neutral-500 dark:text-neutral-500">{breadcrumb}</div>
         ) : (
-        <nav className="mb-2 text-xs text-neutral-500 dark:text-neutral-500" aria-label="Breadcrumb">
+        <nav className="mb-2 text-xs text-neutral-500 dark:text-neutral-500" aria-label={messages.common.breadcrumb}>
           <ol className="flex flex-wrap items-center gap-1.5">
             {crumbs.map((c, i) => (
               <li key={`${c.label}-${i}`} className="flex items-center gap-1.5">
