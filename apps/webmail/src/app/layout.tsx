@@ -16,10 +16,20 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "HubMail",
-  description: "Webmail and control plane for HubMail",
+const metadataCopy = {
+  "pt-BR": "Webmail e plano de controle para HubMail",
+  "en-US": "Webmail and control plane for HubMail",
+  "es-ES": "Webmail y plano de control para HubMail",
 };
+
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getServerLocale();
+
+  return {
+    title: "HubMail",
+    description: metadataCopy[locale],
+  };
+}
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const locale = await getServerLocale();

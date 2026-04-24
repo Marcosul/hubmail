@@ -1,14 +1,17 @@
 import { AppSidebar } from "@/components/dashboard/app-sidebar";
 import { WorkspaceGate } from "@/components/workspace/workspace-gate";
+import { getMessages } from "@/i18n/messages";
+import { getServerLocale } from "@/i18n/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server-client";
 
 export default async function DashboardRootLayout({ children }: { children: React.ReactNode }) {
+  const messages = getMessages(await getServerLocale());
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   const email = user?.email;
-  const userLabel = email?.includes("@") ? email.split("@")[0]! : email || "Account";
+  const userLabel = email?.includes("@") ? email.split("@")[0]! : email || messages.dashboard.account;
 
   return (
     <WorkspaceGate>

@@ -87,6 +87,7 @@ export const messages = {
     },
     dashboard: {
       dashboard: "Dashboard",
+      account: "Conta",
       breadcrumbs: {
         overview: "Visão geral",
         inboxes: "Inboxes",
@@ -441,6 +442,7 @@ export const messages = {
     },
     dashboard: {
       dashboard: "Dashboard",
+      account: "Account",
       breadcrumbs: {
         overview: "Overview",
         inboxes: "Inboxes",
@@ -795,6 +797,7 @@ export const messages = {
     },
     dashboard: {
       dashboard: "Dashboard",
+      account: "Cuenta",
       breadcrumbs: {
         overview: "Resumen",
         inboxes: "Inboxes",

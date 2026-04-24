@@ -91,7 +91,7 @@ export function ThreadViewer({
                     type="button"
                     onClick={() => onToggleStar?.(message.id, !starred)}
                     className="rounded p-1 hover:bg-neutral-100 dark:hover:bg-white/10"
-                    aria-label="Toggle star"
+                    aria-label={copy.toggleStar}
                   >
                     <Star
                       className={cn(
@@ -122,7 +122,7 @@ export function ThreadViewer({
                       onReply?.({
                         to: replyTo,
                         subject,
-                        text: `\n\nEm ${new Date(message.receivedAt).toLocaleString(getLocaleDateFormat(locale))}, ${
+                        text: `\n\n${composeCopy.quoteOn} ${new Date(message.receivedAt).toLocaleString(getLocaleDateFormat(locale))}, ${
                           message.from.name || message.from.email
                         } ${composeCopy.wrote}:\n${quoted}`,
                         inReplyTo: message.inReplyTo ?? message.id,
