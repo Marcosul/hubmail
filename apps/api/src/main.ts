@@ -21,6 +21,33 @@ function parseOrigins(raw: string | undefined): string[] {
 }
 
 /**
+ * CORS exige match exacto de `Origin`. Se `APP_URL` tiver só `https://exemplo.com`,
+ * quem abre em `https://www.exemplo.com` falha. Adiciona o par apex ↔ www (exc. localhost).
+ */
+function expandOriginsForCors(origins: string[]): string[] {
+  const set = new Set<string>();
+  for (const o of origins) {
+    if (!o) continue;
+    set.add(o);
+    try {
+      const u = new URL(o);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') continue;
+      if (u.hostname === 'localhost' || u.hostname.startsWith('127.')) continue;
+      if (u.hostname.startsWith('www.')) {
+        set.add(
+          `${u.protocol}//${u.hostname.slice(4)}${u.port ? `:${u.port}` : ''}`,
+        );
+      } else {
+        set.add(`${u.protocol}//www.${u.host}`);
+      }
+    } catch {
+      /* ignore URL inválido */
+    }
+  }
+  return [...set];
+}
+
+/**
  * Cria e configura a aplicação Nest sobre Fastify, sem chamar `listen`.
  * É usado tanto pelo bootstrap tradicional (servidor longo) como pelo
  * handler serverless da Vercel (`apps/api/api/index.ts`).
@@ -46,12 +73,22 @@ export async function createNestApp(): Promise<NestFastifyApplication> {
   });
 
   const appOrigins = parseOrigins(process.env.APP_URL);
-  const extraOrigins = process.env.CORS_ORIGINS ? parseOrigins(process.env.CORS_ORIGINS) : [];
-  const origins = [...new Set([...appOrigins, ...extraOrigins])];
+  const extraOrigins = process.env.CORS_ORIGINS
+    ? parseOrigins(process.env.CORS_ORIGINS)
+    : [];
+  const origins = expandOriginsForCors(
+    [...new Set([...appOrigins, ...extraOrigins])],
+  );
   app.enableCors({
     origin: origins.length === 1 ? origins[0]! : origins,
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'PUT', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Workspace-Id',
+      'X-Requested-With',
+    ],
   });
 
   app.useGlobalPipes(
