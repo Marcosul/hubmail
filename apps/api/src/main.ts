@@ -45,9 +45,11 @@ export async function createNestApp(): Promise<NestFastifyApplication> {
     });
   });
 
-  const origins = parseOrigins(process.env.APP_URL);
+  const appOrigins = parseOrigins(process.env.APP_URL);
+  const extraOrigins = process.env.CORS_ORIGINS ? parseOrigins(process.env.CORS_ORIGINS) : [];
+  const origins = [...new Set([...appOrigins, ...extraOrigins])];
   app.enableCors({
-    origin: origins.length === 1 ? origins[0] : origins,
+    origin: origins.length === 1 ? origins[0]! : origins,
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'PUT', 'OPTIONS'],
   });

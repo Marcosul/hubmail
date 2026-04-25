@@ -61,12 +61,19 @@ function isAbsoluteUrl(path: string) {
 function getRequestUrl(path: string): string {
   if (isAbsoluteUrl(path)) return path;
   const base = resolveBaseUrl();
-  const normalized = path.startsWith("/") ? path : `/${path}`;
+  let normalized = path.startsWith("/") ? path : `/${path}`;
   if (!base) return normalized;
   if (normalized.startsWith("/api/auth/logout") || normalized.startsWith("/api/auth/login")) {
     return normalized;
   }
-  return `${base}${normalized}`;
+  const baseNoSlash = base.replace(/\/$/, "");
+  // NEXT_PUBLIC_API_URL muitas vezes inclui o prefixo global `/api` (ex.: …vercel.app/api).
+  // Os caminhos do cliente já são `/api/...`; sem isto fica `…/api/api/mailboxes` e a API
+  // devolve 404 — no browser isso costuma manifestar-se como “CORS” no preflight.
+  if (baseNoSlash.endsWith("/api") && normalized.startsWith("/api/")) {
+    normalized = normalized.replace(/^\/api/, "");
+  }
+  return `${baseNoSlash}${normalized}`;
 }
 
 function mergeHeaders(...sources: (HeadersInit | undefined)[]): Record<string, string> {

@@ -65,14 +65,16 @@ export class AuthService {
 
   private userAuthClient(): SupabaseClient {
     const url = this.supabaseProjectUrl();
-    const anon = this.config.get<string>('SUPABASE_ANON_KEY')?.trim();
+    const anon =
+      this.config.get<string>('SUPABASE_ANON_KEY')?.trim() ||
+      this.config.get<string>('STORAGE_SUPABASE_ANON_KEY')?.trim();
     const service =
       this.config.get<string>('SUPABASE_SERVICE_ROLE_KEY')?.trim() ||
       this.config.get<string>('STORAGE_SUPABASE_SERVICE_ROLE_KEY')?.trim();
     const key = anon || service;
     if (!key) {
       throw new BadGatewayException(
-        'Defina SUPABASE_ANON_KEY (recomendado) ou SUPABASE_SERVICE_ROLE_KEY no .env',
+        'Defina SUPABASE_ANON_KEY, STORAGE_SUPABASE_ANON_KEY ou a service role (SUPABASE_SERVICE_ROLE_KEY / STORAGE_SUPABASE_SERVICE_ROLE_KEY) no .env',
       );
     }
     return createClient(url, key);
