@@ -84,6 +84,7 @@ export const messages = {
       openNavigation: "Abrir navegação",
       closeNavigation: "Fechar navegação",
       toggleTheme: "Alternar modo claro ou escuro",
+      openSettings: "Abrir configurações de tema e idioma",
     },
     dashboard: {
       dashboard: "Dashboard",
@@ -439,6 +440,7 @@ export const messages = {
       openNavigation: "Open navigation",
       closeNavigation: "Close navigation",
       toggleTheme: "Toggle light or dark mode",
+      openSettings: "Open theme and language settings",
     },
     dashboard: {
       dashboard: "Dashboard",
@@ -794,6 +796,7 @@ export const messages = {
       openNavigation: "Abrir navegación",
       closeNavigation: "Cerrar navegación",
       toggleTheme: "Alternar modo claro u oscuro",
+      openSettings: "Abrir configuración de tema e idioma",
     },
     dashboard: {
       dashboard: "Dashboard",

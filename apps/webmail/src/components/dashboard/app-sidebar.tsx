@@ -16,6 +16,7 @@ import {
   Mail,
   Menu,
   Moon,
+  Settings,
   Sun,
   Webhook,
   MessageCircle,
@@ -23,7 +24,7 @@ import {
   MessageSquare,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/api/rest/generic";
@@ -53,7 +54,28 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
   const { locale, setLocale, messages } = useI18n();
   const [mounted, setMounted] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    function handlePointerDown(event: PointerEvent) {
+      const node = settingsMenuRef.current;
+      if (node && !node.contains(event.target as Node)) {
+        setSettingsOpen(false);
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setSettingsOpen(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [settingsOpen]);
 
   function handleLocaleChange(nextLocale: AppLocale) {
     setLocale(nextLocale);
@@ -174,54 +196,73 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
             {messages.common.feedback}
           </a>
 
-          <div className="flex items-center justify-between rounded-md px-3 py-2">
-            <span className="text-xs text-neutral-500 dark:text-neutral-500">{messages.common.theme}</span>
-            <button
-              type="button"
-              onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
-              disabled={!mounted}
-              className="flex size-9 items-center justify-center rounded-md border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-100 disabled:opacity-50 dark:border-hub-border dark:bg-hub-card dark:text-neutral-200 dark:hover:bg-white/5"
-              aria-label={messages.sidebar.toggleTheme}
-            >
-              {!mounted ? null : resolvedTheme === "dark" ? (
-                <Sun className="size-4" aria-hidden />
-              ) : (
-                <Moon className="size-4" aria-hidden />
-              )}
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between gap-2 rounded-md px-3 py-2">
-            <span className="text-xs text-neutral-500 dark:text-neutral-500">{messages.common.language}</span>
-            <select
-              value={locale}
-              onChange={(event) => handleLocaleChange(event.target.value as AppLocale)}
-              className="max-w-36 rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs text-neutral-700 dark:border-hub-border dark:bg-hub-card dark:text-neutral-200"
-              aria-label={messages.common.language}
-            >
-              {SUPPORTED_LOCALES.map((item) => (
-                <option key={item} value={item}>
-                  {getLocaleLabel(item)}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2 rounded-md px-2 py-2">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-neutral-300 text-xs font-medium text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
-              {userLabel.slice(0, 1).toUpperCase()}
+          <div ref={settingsMenuRef} className="relative rounded-md px-2 py-2">
+            <div className="flex items-center gap-2">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-neutral-300 text-xs font-medium text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
+                {userLabel.slice(0, 1).toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-1">
+                  <p className="min-w-0 flex-1 truncate text-sm font-medium text-neutral-900 dark:text-white">
+                    {userLabel}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setSettingsOpen((open) => !open)}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-200/80 hover:text-neutral-800 dark:hover:bg-white/10 dark:hover:text-neutral-200"
+                    aria-expanded={settingsOpen}
+                    aria-haspopup="true"
+                    aria-label={messages.sidebar.openSettings}
+                  >
+                    <Settings className="size-4" aria-hidden />
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="mt-0.5 flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-300"
+                >
+                  <LogOut className="size-3" aria-hidden />
+                  {messages.common.signOut}
+                </button>
+              </div>
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">{userLabel}</p>
-              <button
-                type="button"
-                onClick={handleSignOut}
-                className="flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-300"
-              >
-                <LogOut className="size-3" aria-hidden />
-                {messages.common.signOut}
-              </button>
-            </div>
+
+            {settingsOpen ? (
+              <div className="absolute left-0 right-0 top-full z-20 mt-1 space-y-3 rounded-md border border-neutral-200 bg-white p-3 shadow-lg dark:border-hub-border dark:bg-hub-card">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-neutral-500 dark:text-neutral-400">{messages.common.theme}</span>
+                  <button
+                    type="button"
+                    onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+                    disabled={!mounted}
+                    className="flex size-9 shrink-0 items-center justify-center rounded-md border border-neutral-200 bg-neutral-50 text-neutral-700 hover:bg-neutral-100 disabled:opacity-50 dark:border-hub-border dark:bg-[#141414] dark:text-neutral-200 dark:hover:bg-white/5"
+                    aria-label={messages.sidebar.toggleTheme}
+                  >
+                    {!mounted ? null : resolvedTheme === "dark" ? (
+                      <Sun className="size-4" aria-hidden />
+                    ) : (
+                      <Moon className="size-4" aria-hidden />
+                    )}
+                  </button>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs text-neutral-500 dark:text-neutral-400">{messages.common.language}</span>
+                  <select
+                    value={locale}
+                    onChange={(event) => handleLocaleChange(event.target.value as AppLocale)}
+                    className="w-full rounded-md border border-neutral-200 bg-neutral-50 px-2 py-1.5 text-xs text-neutral-700 dark:border-hub-border dark:bg-[#141414] dark:text-neutral-200"
+                    aria-label={messages.common.language}
+                  >
+                    {SUPPORTED_LOCALES.map((item) => (
+                      <option key={item} value={item}>
+                        {getLocaleLabel(item)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       </aside>

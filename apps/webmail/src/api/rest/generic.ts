@@ -1,4 +1,5 @@
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser-client";
+import { isFatalAuthSessionError } from "@/lib/supabase/auth-session-errors";
 
 export type ApiMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -93,13 +94,33 @@ function mergeHeaders(...sources: (HeadersInit | undefined)[]): Record<string, s
   return out;
 }
 
+function redirectToLoginAfterInvalidSession(): void {
+  const next = `${window.location.pathname}${window.location.search}`;
+  const q = new URLSearchParams({ next });
+  window.location.assign(`/login?${q.toString()}`);
+}
+
 async function resolveAccessToken(): Promise<string | undefined> {
   if (typeof window === "undefined") return undefined;
   try {
     const supabase = createSupabaseBrowserClient();
-    const { data } = await supabase.auth.getSession();
+    const { data, error } = await supabase.auth.getSession();
+    if (error && isFatalAuthSessionError(error)) {
+      await supabase.auth.signOut();
+      redirectToLoginAfterInvalidSession();
+      return undefined;
+    }
     return data.session?.access_token;
-  } catch {
+  } catch (e) {
+    if (isFatalAuthSessionError(e)) {
+      try {
+        const supabase = createSupabaseBrowserClient();
+        await supabase.auth.signOut();
+      } catch {
+        /* ignore */
+      }
+      redirectToLoginAfterInvalidSession();
+    }
     return undefined;
   }
 }

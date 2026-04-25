@@ -6,7 +6,7 @@ Documento operacional com as credenciais atuais e os parametros de configuracao 
 
 - **IP publico:** `216.250.124.232`
 - **SSH user:** `root`
-- **SSH password:** `OpenSync369`
+- **SSH password:** `vault://infra/ionos/root-password`
 - **API base (IONOS):** `https://api.ionos.com/cloudapi/v6`
 - **Datacenter ID:** `b98c1df6-3c32-448d-bec8-41f51af0ad48`
 - **Server ID:** `ada78118-93ca-4a4e-8eee-138f1dfa9f64`
@@ -15,7 +15,7 @@ Documento operacional com as credenciais atuais e os parametros de configuracao 
 
 - **Admin URL (bootstrap):** `http://216.250.124.232:8080/admin`
 - **Usuario temporario:** `admin`
-- **Senha temporaria (bootstrap):** `qPaGfevOPcNJXkZe` (usada so ate concluir o wizard)
+- **Senha temporaria (bootstrap):** `vault://mail/hubmail.to/stalwart-bootstrap-admin` (usada so ate concluir o wizard)
 
 > Apos o wizard finalizar, a conta de administrador definitiva (abaixo) substitui o bootstrap.
 
@@ -40,8 +40,8 @@ Portal de licenciamento (referencia): `https://license.stalw.art/license/4815`
 - **Emitido para:** `hubmail.to`
 - **Licencas (mailboxes):** `25`
 - **Validade:** portal mostra **23 Abr 2026** a **23 Mai 2026**; a chave em binario carrega `validFrom` / `validTo` em UTC (~18 Abr 2026 – ~28 Mai 2026), alinhado com o evento `server.licensing` nos logs.
-- **License Key (correta — copiar uma linha):** `abvjaQAAAABpdxhqAAAAABkAAAAKAAAAaHVibWFpbC50b8AgduUusAL5Hny1105ensaXQOzC5RO3ulbXIrQZoA4pPeU3PQuXyc1z0p3+P5YpFsifC7YxMSiEIsbIdxZKjAE=`
-- **API Key (auto-renewal):** `K1Za7CJ6HR7s9Pg5KEoU5BmOjnnFHo2U`
+- **License Key (correta — copiar uma linha):** `vault://mail/hubmail.to/stalwart-enterprise-license`
+- **API Key (auto-renewal):** `vault://mail/hubmail.to/stalwart-enterprise-api-key`
 
 > A chave antiga no repo tinha um segmento Base64 errado (`AAhV...` em vez de `aHVibWFpbC50b...` = `hubmail.to`), o que invalidava a licenca offline e fazia falhar o Enterprise ate corrigir.
 
@@ -66,13 +66,13 @@ Preencher com:
 
 ## 4) Wizard - Step 2 (Storage) — PostgreSQL (Supabase)
 
-A configuracao em producao alinha o Stalwart ao **mesmo projecto Supabase** que a API HubMail: credenciais extraidas a partir de **`DIRECT_URL`** (ligacao *direct* ao Postgres, nao o pooler de `DATABASE_URL`) em [apps/api/.env](../apps/api/.env). Guia completo, mapeamento de campos e checklist na VPS: [stalwart-supabase-postgres.md](stalwart-supabase-postgres.md).
+A configuracao em producao alinha o Stalwart ao **mesmo projecto Supabase** que a API HubMail. Nao colocar credenciais em texto puro neste documento; usar sempre referencias `vault://...`. Guia completo, mapeamento de campos e checklist na VPS: [stalwart-supabase-postgres.md](stalwart-supabase-postgres.md).
 
 **No Webadmin (ou equivalente na tua versao):**
 
 - **Main Data Storage:** `PostgreSQL` (variante `PostgreSql` / *store* PostgreSQL)
-- **host / port / database / user / password:** preencher a partir de `DIRECT_URL` (ex.: `db.<project-ref>.supabase.co`, `5432`, `postgres` — *ja descrito* no guia, sem colar segredos aqui)
-- **TLS:** ativado (`useTls`), conforme [doc Stalwart PostgreSQL](https://stalw.art/docs/storage/backends/postgresql/)
+- **host / port / database / user / password:** preencher a partir de `STORAGE_POSTGRES_URL_NON_POOLING` (sem colar segredos no git)
+- **TLS:** alinhar com a conectividade real do endpoint escolhido (na implantacao atual: `useTls=false` + `options=sslmode=require` para o host pooler `aws-1-us-east-1.pooler.supabase.com:5432`)
 - **Attachment & File Storage:** apontar para a **mesma** loja PostgreSQL (equivalente a *Use data store* com backend remoto)
 - **Full-Text Search Index:** idem, mesma loja, salvo se optar por outro *backend* de procura
 - **Cache & Temporary Data:** idem, ou conforme a doc da versao (single backend simplificado: tudo no mesmo Postgres)
@@ -107,6 +107,13 @@ A configuracao em producao alinha o Stalwart ao **mesmo projecto Supabase** que 
 
 - **Admin bootstrap (antes do restart final):** `http://216.250.124.232:8080/admin`
 - **Admin final (apos setup/restart):** `https://mail.hubmail.to/admin`
+
+## 8a) Pos-migracao Supabase (estado aplicado em 2026-04-25)
+
+- O `DataStore` do Stalwart foi migrado de `RocksDb` para `PostgreSql` com **export/import** offline (`stalwart --export` + `stalwart --import`) para manter os objetos de configuracao.
+- O endpoint externo de login deve usar **HTTPS** (`https://mail.hubmail.to/...`). Tentativas em HTTP com `redirect_uri` nao segura retornam erro de autenticacao (`Redirect URI must be HTTPS`).
+- A conta principal continua `admin@hubmail.to` (login com email completo, nao apenas `admin`).
+- No HubMail (Supabase/Prisma), a mailbox principal `admin@hubmail.to` deve existir no workspace do utilizador `marcosul@gmail.com`.
 
 ## 9) DNS minimo para o dominio principal (`hubmail.to`)
 

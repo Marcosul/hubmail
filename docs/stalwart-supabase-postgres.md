@@ -2,13 +2,13 @@
 
 Guia operacional para ligar o Stalwart na **VPS** ao **mesmo projeto Supabase** que a API HubMail usa, com credenciais obtidas a partir de [apps/api/.env](../apps/api/.env) (não comitar segredos; não colar passwords neste repositório).
 
-**Âmbito actual:** o servidor de teste teve tráfego mínimo. O fluxo descrito abaixo é **corte limpo** (reconfigurar o backend, sem import/export de dados a partir de RocksDB). Se no futuro precisar de migrar muita carga, consulte a documentação do Stalwart sobre **import/export** de base (dump binário entre backends): [Stalwart — visão geral de backends](https://stalw.art/docs/storage/backends/overview).
+**Âmbito actual:** o servidor de teste teve tráfego mínimo, mas a migracao aplicada em producao foi feita com **export/import** entre backends para preservar objetos (dominios, listeners, certificados e conta admin). Para migracoes futuras, siga o mesmo padrao: [Stalwart — visão geral de backends](https://stalw.art/docs/storage/backends/overview).
 
 ## 1) Fonte de credenciais no repositório
 
 | Variável | Uso |
 | --- | --- |
-| `DIRECT_URL` | **Ligação directa** ao Postgres (geralmente `db.<ref>.supabase.co:5432`, sem PgBouncer em modo *transaction*). **É a que deve usar o Stalwart** — processo de longa duração, pool interno do Stalwart. |
+| `DIRECT_URL` | Ligação directa ao Postgres (`db.<ref>.supabase.co:5432`), quando houver rota de rede disponivel na VPS. |
 | `DATABASE_URL` | Pooler Prisma; tipicamente **não** adequado sozinho para o Stalwart se for URL do pooler (6543) em modo incompatível com conexões longas. |
 | `STORAGE_POSTGRES_URL_NON_POOLING` | Alias opcional; mesmo papel que o direct, se seguir a convenção do [scripts/vercel-push-production-env.cjs](../scripts/vercel-push-production-env.cjs). |
 
@@ -55,16 +55,29 @@ Ajuste exacto da UI: **Settings → Storage →** criar o *store* `PostgreSql` e
 
 A API [apps/api](../apps/api) usa o mesmo *database* `postgres` para tabelas Prisma (ex. `public.profiles`). O Stalwart cria o seu próprio conjunto de tabelas. Conflito de nomes improvável; no futuro, um *schema* dedicado e `search_path` pode ser avaliado via `options` do conector, se necessário.
 
-## 6) Fluxo recomendado (sem export/import de dados)
+## 6) Fluxo recomendado (com export/import entre backends)
 
-1. Anotar a partir de `DIRECT_URL` (localmente, nunca no git) host, porto, `postgres`, utilizador, password.
-2. Parar: `sudo systemctl stop stalwart`.
-3. No Webadmin (ou na config, conforme a versão), definir a loja **PostgreSQL** e apontar **todas** as lojas necessárias a esse destino, **TLS** activo.
-4. Iniciar: `sudo systemctl start stalwart`.
-5. Verificar: `journalctl` sem erros de ligação ao Postgres; teste envio e recebimento; opcionalmente envio a uma caixa externa.
-6. Após confirmação, opcionalmente arquivar ou apagar o directório de dados local RocksDB deixado em `/var/lib/stalwart/`.
+1. Parar o servico: `sudo systemctl stop stalwart`.
+2. Exportar o backend atual: `stalwart --config=/etc/stalwart/config.json --export /root/stalwart-export.bin`.
+3. Atualizar `/etc/stalwart/config.json` para variante `PostgreSql` (host/porta/user/password vindos de segredo local).
+4. Importar para o novo backend: `stalwart --config=/etc/stalwart/config.json --import /root/stalwart-export.bin`.
+5. Iniciar o servico: `sudo systemctl start stalwart`.
+6. Verificar no `journalctl` e no `stalwart-cli get datastore --json` que o backend ativo e `PostgreSql`.
 
-**Nota:** depois de trocar o *storage* de raiz, pode ser necessário rever contas de administrador consoante a versão; em ambiente de teste isso costuma ser aceitável (ver plano de migracao do projecto).
+**Nota de conectividade real (VPS atual):**
+- `db.<project-ref>.supabase.co:5432` estava sem rota a partir da VPS.
+- `aws-1-us-east-1.pooler.supabase.com:5432` estava acessivel.
+- Config final aplicada: `host=aws-1-us-east-1.pooler.supabase.com`, `port=5432`, `useTls=false`, `options=sslmode=require`.
+
+## 6a) Erro "Temporary server failure" no login (checklist)
+
+Quando o Web UI mostrar erro generico ao autenticar, validar em ordem:
+
+1. **Redirect URI insegura:** eventos `auth.error` com `Redirect URI must be HTTPS` indicam login por `http://...` em vez de `https://...`.
+2. **Store indisponivel:** erros `store.postgresql-error` / TLS handshake / credenciais.
+3. **Conta ausente no diretorio interno:** confirmar `get account <id>` e dominio associado.
+
+No ambiente atual, o item 1 ocorreu em acessos por URL HTTP e foi corrigido ao padronizar acesso HTTPS.
 
 ## 7) Full-text search (FTS) no PostgreSQL
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+import { isFatalAuthSessionError } from "@/lib/supabase/auth-session-errors";
 import { createSupabaseMiddlewareClient } from "@/lib/supabase/middleware-client";
 
 function normalizePathname(pathname: string) {
@@ -39,9 +40,28 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const {
-    data: { user },
-  } = await client.supabase.auth.getUser();
+  let user;
+  let authError: unknown;
+  try {
+    const out = await client.supabase.auth.getUser();
+    user = out.data.user;
+    authError = out.error;
+  } catch (e) {
+    authError = e;
+    user = null;
+  }
+
+  if (authError && isFatalAuthSessionError(authError)) {
+    await client.supabase.auth.signOut();
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = "/login";
+    loginUrl.searchParams.set("next", pathname);
+    const redirectRes = NextResponse.redirect(loginUrl);
+    for (const c of client.response.cookies.getAll()) {
+      redirectRes.cookies.set(c.name, c.value, c);
+    }
+    return redirectRes;
+  }
 
   if (isDashboardPath && !user) {
     const url = request.nextUrl.clone();
