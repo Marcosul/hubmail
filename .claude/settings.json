@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -v \"^$\")",
+      "Bash(npx prisma *)",
+      "Bash(PGPASSWORD=\"By6M8VlSqrzmkOCe\" psql \"postgresql://postgres@db.nmfxfmyjhjznksleqlop.supabase.co:5432/postgres\" -c \"\\\\dt\")"
+    ]
+  }
+}

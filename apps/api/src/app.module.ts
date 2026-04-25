@@ -4,7 +4,9 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { HealthController } from './health.controller';
 import { AuthModule } from './auth/auth.module';
 import { AgentsModule } from './agents/agents.module';
+import { ApiKeysModule } from './api-keys/api-keys.module';
 import { AutomationsModule } from './automations/automations.module';
+import { DomainsModule } from './domains/domains.module';
 import { MailModule } from './mail/mail.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -21,6 +23,8 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
     AuthModule,
     TenancyModule,
     WorkspacesModule,
+    DomainsModule,
+    ApiKeysModule,
     MailModule,
     QueueModule,
     WebhooksModule,

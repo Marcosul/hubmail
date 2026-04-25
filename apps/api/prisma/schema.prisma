@@ -114,6 +114,7 @@ model Workspace {
   automations  Automation[]
   agents       Agent[]
   budget       Budget?
+  workspacePlan WorkspacePlan?
 
   @@unique([organizationId, slug])
   @@index([createdAt])
@@ -406,4 +407,39 @@ model Budget {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@map("budgets")
+}
+
+// ---------------------------------------------------------------------------
+// Plans & subscriptions
+// ---------------------------------------------------------------------------
+
+model Plan {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String   @unique
+  slug            String   @unique
+  maxInboxes      Int      @default(3)     @map("max_inboxes")
+  maxDomains      Int      @default(1)     @map("max_domains")
+  maxEmailsMonth  Int      @default(3000)  @map("max_emails_month")
+  storageMb       Int      @default(3072)  @map("storage_mb")
+  priceCents      Int      @default(0)     @map("price_cents")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  workspacePlans WorkspacePlan[]
+
+  @@map("plans")
+}
+
+model WorkspacePlan {
+  id          String    @id @default(uuid()) @db.Uuid
+  workspaceId String    @unique @map("workspace_id") @db.Uuid
+  planId      String    @map("plan_id") @db.Uuid
+  expiresAt   DateTime? @map("expires_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  plan      Plan      @relation(fields: [planId], references: [id])
+
+  @@index([planId])
+  @@map("workspace_plans")
 }

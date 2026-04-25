@@ -111,9 +111,12 @@ export function ThreadViewer({
                     type="button"
                     onClick={() => {
                       const replyTo = message.from.email;
-                      const subject = message.subject.startsWith("Re:")
-                        ? message.subject
-                        : `Re: ${message.subject}`;
+                      const rawSubject = message.subject ?? "";
+                      const subject = rawSubject.startsWith("Re:")
+                        ? rawSubject
+                        : rawSubject
+                          ? `Re: ${rawSubject}`
+                          : `Re: ${copy.noSubject}`;
                       const quoted =
                         (message.bodyText ?? "")
                           .split("\n")

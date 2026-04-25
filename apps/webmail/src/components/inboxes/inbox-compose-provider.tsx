@@ -87,13 +87,15 @@ export function InboxComposeDock({ mailboxId }: { mailboxId?: string }) {
         onClick={closeCompose}
       />
       <div
-        className="fixed right-0 bottom-0 z-50 w-full p-3 sm:bottom-4 sm:right-4 sm:max-w-md sm:p-0"
+        className="fixed right-0 bottom-0 z-50 w-full p-3 sm:bottom-4 sm:right-4 sm:max-w-[min(100%,28rem)] sm:p-0"
         role="dialog"
         aria-label={messages.compose.dialog}
+        onClick={(e) => e.stopPropagation()}
       >
         <EmailComposerCard
+          key={draft?.inReplyTo ? String(draft.inReplyTo) : "compose"}
           onClose={closeCompose}
-          className="max-h-[min(560px,78vh)] shadow-2xl"
+          className="shadow-2xl"
           compact
           mailboxId={draft?.mailboxId ?? mailboxId}
           initialDraft={draft ?? undefined}
