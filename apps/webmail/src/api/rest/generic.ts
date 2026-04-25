@@ -137,11 +137,12 @@ export async function apiRequest<TResponse>(
     authHeader["X-Workspace-Id"] = workspace;
   }
 
-  const merged = mergeHeaders(
-    { "Content-Type": "application/json" },
-    authHeader,
-    headers,
-  );
+  // Não enviar `Content-Type: application/json` sem corpo: o Fastify na API
+  // falha ao fazer parse (400), p.ex. em `POST /api/workspaces/bootstrap`.
+  const contentType: Record<string, string> =
+    body !== undefined ? { "Content-Type": "application/json" } : {};
+
+  const merged = mergeHeaders(contentType, authHeader, headers);
 
   const res = await fetch(getRequestUrl(path), {
     method,
