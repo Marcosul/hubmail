@@ -5,6 +5,7 @@
   "scripts": {
     "build": "prisma generate && nest build",
     "vercel-build": "prisma generate && nest build",
+    "predev": "prisma generate",
     "dev": "set -a; [ -f .env ] && . ./.env; set +a; nest start --watch",
     "start": "node dist/main",
     "workers": "node dist/workers",

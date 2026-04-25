@@ -1,3 +1,4 @@
+import '../src/prisma-env-bridge';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import {

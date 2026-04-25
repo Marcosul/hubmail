@@ -4,6 +4,8 @@ generator client {
   binaryTargets = ["native", "rhel-openssl-3.0.x", "debian-openssl-3.0.x"]
 }
 
+// URLs efectivas: `STORAGE_POSTGRES_*` (Vercel/Supabase) ou, em dev legado,
+// `DATABASE_URL` / `DIRECT_URL` — ver `src/prisma-env-bridge.ts` (importado no arranque).
 datasource db {
   provider  = "postgresql"
   url       = env("STORAGE_POSTGRES_PRISMA_URL")
