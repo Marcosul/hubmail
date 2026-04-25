@@ -6,7 +6,7 @@ Documento operacional com as credenciais atuais e os parametros de configuracao 
 
 - **IP publico:** `216.250.124.232`
 - **SSH user:** `root`
-- **SSH password:** `vault://infra/ionos/root-password`
+- **SSH password:** ``
 - **API base (IONOS):** `https://api.ionos.com/cloudapi/v6`
 - **Datacenter ID:** `b98c1df6-3c32-448d-bec8-41f51af0ad48`
 - **Server ID:** `ada78118-93ca-4a4e-8eee-138f1dfa9f64`
@@ -23,7 +23,7 @@ Documento operacional com as credenciais atuais e os parametros de configuracao 
 
 Credenciais exibidas na tela "Setup complete" (senha nao e recuperavel depois; guarde com seguranca).
 
-- **Email do administrador:** `admin@hubmail.to`
+- **Email do administrador:** `image.png`
 - **Senha do administrador:** `IZkXuz8OkspObVlQ`
 - **Admin URL (final):** `https://mail.hubmail.to/admin` (aplique `systemctl restart stalwart` se ainda nao fez, conforme o fluxo do Stalwart)
 
