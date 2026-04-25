@@ -10,11 +10,11 @@
     "dev:webmail": "pnpm exec turbo dev --filter=@hubmail/webmail",
     "dev:api": "pnpm exec turbo dev --filter=@hubmail/api",
     "db:deploy": "pnpm --filter @hubmail/api run db:deploy",
-    "deploy:api": "vercel --cwd apps/api --prod",
-    "deploy:webmail": "vercel --cwd apps/webmail --prod",
-    "vercel:api": "vercel --cwd apps/api",
-    "vercel:webmail": "vercel --cwd apps/webmail",
-    "vercel:login": "vercel login",
+    "deploy:api": "pnpm exec vercel --cwd apps/api --prod",
+    "deploy:webmail": "pnpm exec vercel --cwd apps/webmail --prod",
+    "vercel:api": "pnpm exec vercel --cwd apps/api",
+    "vercel:webmail": "pnpm exec vercel --cwd apps/webmail",
+    "vercel:login": "pnpm exec vercel login",
     "vercel:push-env:production": "node scripts/vercel-push-production-env.cjs"
   },
   "devDependencies": {

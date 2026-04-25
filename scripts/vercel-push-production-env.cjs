@@ -14,7 +14,8 @@ const ROOT = path.join(__dirname, '..');
 const TEAM = 'gr-digital';
 const API_PROJECT = 'hubmail-api';
 const WEBMAIL_PROJECT = 'hubmail-webmail';
-const API_PUBLIC_URL = 'https://hubmail-api.vercel.app';
+/** API pública (domínio custom; usada em NEXT_PUBLIC_API_URL) */
+const API_PUBLIC_URL = 'https://api.hubmail.to';
 /** Domínio canónico do webmail (CORS, redirects, NEXT_PUBLIC_*) */
 const WEBMAIL_PUBLIC_URL = 'https://hubmail.to';
 
@@ -113,39 +114,47 @@ function main() {
   const webEnv = parseEnv(webPath);
 
   const supabaseAnon =
+    apiEnv.STORAGE_SUPABASE_ANON_KEY ||
     apiEnv.SUPABASE_ANON_KEY ||
     webEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
     webEnv.NEXT_PUBLIC_STORAGE_SUPABASE_ANON_KEY;
   if (!supabaseAnon) {
-    console.error('Falta SUPABASE_ANON_KEY na API ou chave anon no webmail .env.local');
+    console.error(
+      'Falta STORAGE_SUPABASE_ANON_KEY (ou legacy SUPABASE_*) na API, ou chave anon no webmail .env.local',
+    );
     process.exit(1);
   }
 
-  const supabaseUrl = apiEnv.SUPABASE_URL || apiEnv.STORAGE_SUPABASE_URL;
+  const supabaseUrl = apiEnv.STORAGE_SUPABASE_URL || apiEnv.SUPABASE_URL;
   if (!supabaseUrl) {
-    console.error('Falta SUPABASE_URL ou STORAGE_SUPABASE_URL no .env da API');
+    console.error('Falta STORAGE_SUPABASE_URL (ou SUPABASE_URL) no .env da API');
     process.exit(1);
   }
 
-  const serviceKey = apiEnv.SUPABASE_SERVICE_ROLE_KEY || apiEnv.STORAGE_SUPABASE_SERVICE_ROLE_KEY;
+  const serviceKey =
+    apiEnv.STORAGE_SUPABASE_SERVICE_ROLE_KEY || apiEnv.SUPABASE_SERVICE_ROLE_KEY;
   if (!serviceKey) {
-    console.error('Falta SUPABASE_SERVICE_ROLE_KEY ou STORAGE_SUPABASE_SERVICE_ROLE_KEY');
+    console.error('Falta STORAGE_SUPABASE_SERVICE_ROLE_KEY (ou SUPABASE_SERVICE_ROLE_KEY)');
     process.exit(1);
   }
 
-  const databaseUrl = apiEnv.DATABASE_URL || apiEnv.STORAGE_POSTGRES_PRISMA_URL;
-  const directUrl = apiEnv.DIRECT_URL || apiEnv.STORAGE_POSTGRES_URL_NON_POOLING;
+  const databaseUrl =
+    apiEnv.STORAGE_POSTGRES_PRISMA_URL || apiEnv.DATABASE_URL;
+  const directUrl =
+    apiEnv.STORAGE_POSTGRES_URL_NON_POOLING || apiEnv.DIRECT_URL;
   if (!databaseUrl || !directUrl) {
-    console.error('Falta DATABASE_URL / DIRECT_URL (ou STORAGE_POSTGRES_*) no .env da API');
+    console.error(
+      'Falta STORAGE_POSTGRES_PRISMA_URL e STORAGE_POSTGRES_URL_NON_POOLING (ou legacy DATABASE_URL / DIRECT_URL) no .env da API',
+    );
     process.exit(1);
   }
 
   const coreApi = {
-    SUPABASE_URL: supabaseUrl,
-    SUPABASE_ANON_KEY: supabaseAnon,
-    SUPABASE_SERVICE_ROLE_KEY: serviceKey,
-    DATABASE_URL: databaseUrl,
-    DIRECT_URL: directUrl,
+    STORAGE_SUPABASE_URL: supabaseUrl,
+    STORAGE_SUPABASE_ANON_KEY: supabaseAnon,
+    STORAGE_SUPABASE_SERVICE_ROLE_KEY: serviceKey,
+    STORAGE_POSTGRES_PRISMA_URL: databaseUrl,
+    STORAGE_POSTGRES_URL_NON_POOLING: directUrl,
     APP_URL: `${WEBMAIL_PUBLIC_URL},https://www.hubmail.to`,
     WORKERS_ENABLED: 'false',
     SWAGGER_DISABLED: 'true',

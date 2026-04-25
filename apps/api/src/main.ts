@@ -3,6 +3,7 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { getCorsAllowList } from './cors-origins';
 
 const colors = {
   reset: '\x1b[0m',
@@ -11,43 +12,6 @@ const colors = {
   magenta: '\x1b[35m',
   yellow: '\x1b[33m',
 };
-
-function parseOrigins(raw: string | undefined): string[] {
-  if (!raw) return [];
-  return raw
-    .split(',')
-    .map((v) => v.trim())
-    .filter(Boolean);
-}
-
-/**
- * CORS exige match exacto de `Origin`. Se `APP_URL` tiver só `https://exemplo.com`,
- * quem abre em `https://www.exemplo.com` falha. Adiciona o par apex ↔ www (exc. localhost).
- */
-function expandOriginsForCors(origins: string[]): string[] {
-  const set = new Set<string>();
-  for (const o of origins) {
-    if (!o) continue;
-    set.add(o);
-    try {
-      const u = new URL(o);
-      if (u.protocol !== 'http:' && u.protocol !== 'https:') continue;
-      if (u.hostname === 'localhost' || u.hostname.startsWith('127.')) continue;
-      if (u.hostname.startsWith('www.')) {
-        set.add(
-          `${u.protocol}//${u.hostname.slice(4)}${u.port ? `:${u.port}` : ''}`,
-        );
-      } else {
-        set.add(`${u.protocol}//www.${u.host}`);
-      }
-    } catch {
-      /* ignore URL inválido */
-    }
-  }
-  return [...set];
-}
-
-const DEFAULT_CORS_HUBMAIL = ['https://hubmail.to', 'https://www.hubmail.to'] as const;
 
 /**
  * Cria e configura a aplicação Nest sobre Fastify, sem chamar `listen`.
@@ -74,20 +38,7 @@ export async function createNestApp(): Promise<NestFastifyApplication> {
     });
   });
 
-  const appOrigins = parseOrigins(process.env.APP_URL);
-  const extraOrigins = process.env.CORS_ORIGINS
-    ? parseOrigins(process.env.CORS_ORIGINS)
-    : [];
-  let baseOrigins = [...new Set([...appOrigins, ...extraOrigins])];
-  if (baseOrigins.length === 0) {
-    // Sem APP_URL no painel, o CORS deixa de incluir o domínio do webmail e o browser
-    // bloqueia tudo. Em Vercel usamos o site público por omissão; em dev, localhost.
-    const onVercel = Boolean(
-      process.env.VERCEL || process.env.VERCEL_URL || process.env.VERCEL_ENV,
-    );
-    baseOrigins = onVercel ? [...DEFAULT_CORS_HUBMAIL] : ['http://localhost:3010'];
-  }
-  const origins = expandOriginsForCors(baseOrigins);
+  const origins = getCorsAllowList();
   app.enableCors({
     // Callback: com `credentials: true` o preflight tem de reflectir o `Origin` exacto
     // (p.ex. `https://www.hubmail.to`); a lista de strings por vezes falha no Fastify+serverless.

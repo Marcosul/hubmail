@@ -28,8 +28,11 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       this.log.log(`${c.green}🗄️  PrismaClient ligado ao Supabase ✨${c.reset}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.log.error(`${c.red}❌ Falha ao ligar ao Postgres:${c.reset} ${message}`);
-      throw error;
+      this.log.error(
+        `${c.red}❌ Falha ao ligar ao Postgres (API arranca lo mesmo; liga as env STORAGE_POSTGRES_* na Vercel):${c.reset} ${message}`,
+      );
+      // Não relançar: `app.init()` no serverless (Vercel) falhava, o browser mostrava
+      // CORS a falhar em vez de 500, e o preflight não passava. Rotas a falhar: 500 nítido.
     }
   }
 
