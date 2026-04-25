@@ -9,6 +9,20 @@ import {
 import { createNestApp } from '../src/main';
 
 let cached: Promise<NestFastifyApplication> | null = null;
+let processHandlersBound = false;
+
+function bindProcessDiagnostics(): void {
+  if (processHandlersBound) return;
+  processHandlersBound = true;
+  process.on('uncaughtException', (error) => {
+    // eslint-disable-next-line no-console
+    console.error('💥 uncaughtException (api/index.ts)', error);
+  });
+  process.on('unhandledRejection', (reason) => {
+    // eslint-disable-next-line no-console
+    console.error('💥 unhandledRejection (api/index.ts)', reason);
+  });
+}
 
 async function getApp(): Promise<NestFastifyApplication> {
   if (!cached) {
@@ -26,6 +40,7 @@ export default async function handler(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
+  bindProcessDiagnostics();
   const allowList = getCorsAllowList();
   const origin = getRequestOrigin(req);
   const method = req.method ?? 'GET';

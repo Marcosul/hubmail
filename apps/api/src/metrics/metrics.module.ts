@@ -1,8 +1,11 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
+import { TenancyModule } from '../tenancy/tenancy.module';
 import { MetricsController } from './metrics.controller';
 import { MetricsService } from './metrics.service';
 
 @Module({
+  imports: [AuthModule, TenancyModule],
   controllers: [MetricsController],
   providers: [MetricsService],
 })

@@ -1,6 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import createDOMPurify from 'isomorphic-dompurify';
-import { JSDOM } from 'jsdom';
 
 const c = {
   reset: '\x1b[0m',
@@ -10,23 +8,25 @@ const c = {
 @Injectable()
 export class HtmlSanitizerService {
   private readonly log = new Logger(HtmlSanitizerService.name);
-  private readonly purify: ReturnType<typeof createDOMPurify>;
-
   constructor() {
-    const window = new JSDOM('').window as unknown as Window;
-    this.purify = createDOMPurify(window as unknown as Window & typeof globalThis);
-    this.log.log(`${c.green}🧼 HtmlSanitizer pronto (DOMPurify + JSDOM)${c.reset}`);
+    this.log.log(`${c.green}🧼 HtmlSanitizer pronto (regex-safe mode)${c.reset}`);
   }
 
   sanitize(html: string): string {
-    return this.purify.sanitize(html, {
-      ALLOWED_TAGS: [
-        'a', 'b', 'blockquote', 'br', 'code', 'div', 'em', 'h1', 'h2', 'h3', 'h4',
-        'h5', 'h6', 'hr', 'i', 'img', 'li', 'ol', 'p', 'pre', 'span', 'strong',
-        'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr', 'u', 'ul',
-      ],
-      ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'style', 'target', 'rel', 'width', 'height'],
-      ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|cid|data):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
-    });
+    if (!html) return '';
+
+    // Remove tags with high XSS risk completely.
+    const withoutBlockedTags = html
+      .replace(/<\s*\/?\s*(script|style|iframe|object|embed|meta|link|base|form|input|button|textarea|select)[^>]*>/gi, '')
+      .replace(/<\s*script[\s\S]*?<\s*\/\s*script\s*>/gi, '')
+      .replace(/<\s*style[\s\S]*?<\s*\/\s*style\s*>/gi, '');
+
+    return withoutBlockedTags
+      .replace(/\son[a-z]+\s*=\s*(".*?"|'.*?'|[^\s>]+)/gi, '')
+      .replace(/\sstyle\s*=\s*(".*?"|'.*?'|[^\s>]+)/gi, '')
+      .replace(
+        /\s(href|src)\s*=\s*("|\')\s*javascript:[\s\S]*?\2/gi,
+        ' $1="#"',
+      );
   }
 }
