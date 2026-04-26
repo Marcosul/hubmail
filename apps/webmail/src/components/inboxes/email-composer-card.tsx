@@ -43,6 +43,8 @@ export function EmailComposerCard({
   const [showCc, setShowCc] = useState(Boolean(initialDraft?.cc));
   const [error, setError] = useState<string | null>(null);
   const send = useSendMail();
+  const initialDraftReferencesKey =
+    initialDraft?.references?.join(",") ?? "";
 
   /** Rascunho vindo do provider muda sem remontar o cartão (ex.: Responder depois de Escrever). */
   useEffect(() => {
@@ -58,7 +60,7 @@ export function EmailComposerCard({
     initialDraft?.subject,
     initialDraft?.text,
     initialDraft?.inReplyTo,
-    initialDraft?.references?.join(","),
+    initialDraftReferencesKey,
   ]);
 
   async function handleSend() {

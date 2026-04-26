@@ -482,15 +482,21 @@ export function DomainSetupWizard({
                         <tr key={row.id} className="border-b border-neutral-100 dark:border-hub-border">
                           <td className="px-3 py-2 align-top">
                             {recordStatus[row.id] === "verified" ? (
-                              <CheckCircle2
-                                className="size-4 text-emerald-600"
+                              <span
+                                className="inline-flex"
                                 title="Registro verificado"
-                              />
+                                aria-label="Registro verificado"
+                              >
+                                <CheckCircle2 className="size-4 text-emerald-600" />
+                              </span>
                             ) : (
-                              <Clock3
-                                className="size-4 text-amber-500"
+                              <span
+                                className="inline-flex"
                                 title="Registro pendente"
-                              />
+                                aria-label="Registro pendente"
+                              >
+                                <Clock3 className="size-4 text-amber-500" />
+                              </span>
                             )}
                           </td>
                           <td className="px-3 py-2 align-top text-neutral-800 dark:text-neutral-200">

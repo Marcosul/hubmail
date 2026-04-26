@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Check, Zap } from "lucide-react";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 
