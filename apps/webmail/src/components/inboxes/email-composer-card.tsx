@@ -76,6 +76,7 @@ export function EmailComposerCard({
     setBody(initialDraft?.text ?? "");
     setShowCc(Boolean(initialDraft?.cc));
     setError(null);
+    draftJmapIdRef.current = initialDraft?.jmapDraftEmailId?.trim() || null;
   }, [
     initialDraft?.to,
     initialDraft?.cc,
@@ -83,6 +84,7 @@ export function EmailComposerCard({
     initialDraft?.text,
     initialDraft?.inReplyTo,
     initialDraftReferencesKey,
+    initialDraft?.jmapDraftEmailId,
   ]);
 
   useEffect(() => {

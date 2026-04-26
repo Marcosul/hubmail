@@ -26,6 +26,8 @@ export type ComposeDraft = {
   inReplyTo?: string;
   references?: string[];
   mailboxId?: string;
+  /** Id JMAP do rascunho existente (abrir da pasta Drafts — auto-save usa replace). */
+  jmapDraftEmailId?: string;
 };
 
 export type ComposeDockWindowState = "normal" | "minimized" | "maximized";
@@ -213,7 +215,7 @@ export function InboxComposeDock({ mailboxId, resolvedMailboxId }: InboxComposeD
           )}
         >
           <EmailComposerCard
-            key={draft?.inReplyTo ? String(draft.inReplyTo) : "compose"}
+            key={draft?.jmapDraftEmailId ?? (draft?.inReplyTo ? String(draft.inReplyTo) : "compose")}
             onClose={closeCompose}
             className={cn("shadow-2xl", isMaximized && "h-full min-h-0")}
             compact

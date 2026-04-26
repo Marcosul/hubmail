@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MailboxSummary, MailFolderSummary, ThreadSummary } from "@hubmail/types";
+import type { EmailMessage, MailboxSummary, MailFolderSummary, ThreadSummary } from "@hubmail/types";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -33,7 +33,7 @@ import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { InboxComposeTrigger, useInboxCompose, type ComposeDraft } from "@/components/inboxes/inbox-compose-provider";
 import { InboxThreadListColumn } from "@/components/inboxes/inbox-thread-list-column";
 import { ThreadViewer } from "@/components/inboxes/thread-viewer";
-import { useMailFolders, useMailboxes, usePatchMessage, useThreads } from "@/hooks/use-mail";
+import { useMailFolders, useMailboxes, usePatchMessage, useThread, useThreads } from "@/hooks/use-mail";
 import { useMailStream } from "@/hooks/use-mail-stream";
 import { useI18n } from "@/i18n/client";
 import type { AppLocale } from "@/i18n/config";
@@ -76,6 +76,38 @@ function isDraftsNavFolder(folder: MailFolderSummary): boolean {
   const role = (folder.role ?? "").toLowerCase().replace(/^\/|\/$/g, "");
   if (role === "drafts" || role === "draft") return true;
   return folder.name.toLowerCase().includes("draft");
+}
+
+function joinMailAddresses(list: { email: string }[] | undefined): string {
+  if (!list?.length) return "";
+  return list
+    .map((a) => a.email.trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+function bodyTextFromEmailMessage(m: EmailMessage): string {
+  const t = m.bodyText?.trim();
+  if (t) return t;
+  if (m.bodyHtml) {
+    return m.bodyHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  }
+  return "";
+}
+
+function draftMessageToComposeDraft(message: EmailMessage, mailboxId: string): ComposeDraft {
+  return {
+    mailboxId,
+    jmapDraftEmailId: message.id,
+    to: joinMailAddresses(message.to),
+    cc: message.cc?.length ? joinMailAddresses(message.cc) : undefined,
+    bcc: message.bcc?.length ? joinMailAddresses(message.bcc) : undefined,
+    subject: message.subject?.trim() ? message.subject : undefined,
+    text: bodyTextFromEmailMessage(message),
+    html: message.bodyHtml ?? undefined,
+    inReplyTo: message.inReplyTo,
+    references: message.references,
+  };
 }
 
 /** Pastas normais: não lidos. Rascunhos: total na pasta (são guardados como lidos). */
@@ -592,6 +624,51 @@ function Content({ inboxId, folderSlug }: InboxMailViewProps) {
     "t",
     parseAsString.withDefault("").withOptions({ clearOnDefault: true, shallow: true }),
   );
+
+  const isDraftsFolderView = useMemo(
+    () => Boolean(folderMatch && isDraftsNavFolder(folderMatch)),
+    [folderMatch],
+  );
+  const threadIdForDraftCompose = useMemo(() => {
+    if (!isDraftsFolderView) return undefined;
+    const t = selectedThreadId?.trim();
+    return t || undefined;
+  }, [isDraftsFolderView, selectedThreadId]);
+
+  const draftThreadQuery = useThread(mailbox?.id, threadIdForDraftCompose);
+  const openedDraftComposeKeyRef = useRef<string | null>(null);
+  const prevDraftsSelectionRef = useRef<string>("");
+
+  useEffect(() => {
+    if (!isDraftsFolderView) {
+      openedDraftComposeKeyRef.current = null;
+      prevDraftsSelectionRef.current = "";
+      return;
+    }
+    const cur = selectedThreadId?.trim() ?? "";
+    if (prevDraftsSelectionRef.current !== cur) {
+      openedDraftComposeKeyRef.current = null;
+      prevDraftsSelectionRef.current = cur;
+    }
+    if (!cur || !mailbox?.id) return;
+    if (!draftThreadQuery.isSuccess || !draftThreadQuery.data?.messages?.length) return;
+    const msgs = draftThreadQuery.data.messages;
+    const draftMsg =
+      [...msgs].reverse().find((m) => m.flags.includes("$draft")) ?? msgs[msgs.length - 1];
+    if (!draftMsg?.id) return;
+
+    const key = `${cur}|${draftMsg.id}`;
+    if (openedDraftComposeKeyRef.current === key) return;
+    openedDraftComposeKeyRef.current = key;
+    openCompose(draftMessageToComposeDraft(draftMsg, mailbox.id));
+  }, [
+    isDraftsFolderView,
+    selectedThreadId,
+    mailbox?.id,
+    draftThreadQuery.data,
+    draftThreadQuery.isSuccess,
+    openCompose,
+  ]);
 
   const patch = usePatchMessage();
 
