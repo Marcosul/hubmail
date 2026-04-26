@@ -1,5 +1,8 @@
 import Link from "next/link";
+import { codeToHtml } from "shiki";
 import { ArrowRight, Check, Plug2, Inbox, Globe, Webhook, KeyRound, Bot } from "lucide-react";
+import { BlogPreviewCarousel } from "@/components/home/blog-preview-carousel";
+import { getAllPosts } from "@/lib/blog";
 
 const CODE_SNIPPET = `import hubmail from "@hubmail/sdk";
 
@@ -54,14 +57,16 @@ const features = [
   },
 ] as const;
 
-const stats = [
-  { label: "Latência de entrega", value: "< 500ms" },
-  { label: "Uptime garantido", value: "99.9%" },
-  { label: "Protocolos suportados", value: "JMAP · SMTP · IMAP" },
-  { label: "Open source", value: "MIT" },
-] as const;
+/** Primeiras 4 entradas de `features`: mesmos títulos e textos da secção Funcionalidades (layout 2×2 ao lado do código). */
+const codeSideHighlightCards = features.slice(0, 4).map((f) => ({ title: f.title, body: f.body }));
 
-export default function HomePage() {
+export default async function HomePage() {
+  const codeHtml = await codeToHtml(CODE_SNIPPET, {
+    lang: "typescript",
+    theme: "github-dark",
+  });
+  const blogPosts = getAllPosts();
+
   return (
     <div className="min-h-screen bg-[#050505] text-white">
       {/* Header */}
@@ -77,6 +82,7 @@ export default function HomePage() {
           <nav className="hidden items-center gap-6 text-sm text-neutral-400 sm:flex">
             <Link href="#features" className="hover:text-white transition-colors">Funcionalidades</Link>
             <Link href="#pricing" className="hover:text-white transition-colors">Preços</Link>
+            <Link href="/blog" className="hover:text-white transition-colors">Blog</Link>
             <a href="https://hubmail.to" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Docs</a>
           </nav>
 
@@ -98,119 +104,81 @@ export default function HomePage() {
       </header>
 
       <main>
-        {/* Hero */}
-        <section className="relative overflow-hidden px-4 pb-24 pt-20 sm:px-6 sm:pb-32 sm:pt-28 lg:px-8">
-          {/* Background glow */}
+        {/* Hero: cópia + código (substitui o hero centrado anterior) */}
+        <section className="relative overflow-hidden border-b border-white/[0.06] bg-white/[0.02] px-4 pb-16 pt-16 sm:px-6 sm:pb-24 sm:pt-20 lg:px-8 lg:pb-28 lg:pt-24">
           <div className="pointer-events-none absolute inset-0 flex items-start justify-center overflow-hidden">
-            <div className="mt-16 h-[500px] w-[900px] rounded-full bg-white/[0.03] blur-3xl" />
+            <div className="mt-10 h-[420px] w-[min(100%,900px)] rounded-full bg-white/[0.03] blur-3xl sm:mt-16 sm:h-[500px]" />
           </div>
 
-          <div className="relative mx-auto max-w-4xl text-center">
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium text-neutral-300">
-              <span className="size-1.5 rounded-full bg-emerald-400" />
-              Self-hosted · Open source · Pronto para produção
-            </div>
-
-            <h1 className="text-4xl font-bold leading-tight tracking-tight sm:text-6xl lg:text-7xl">
-              Email infraestrutura{" "}
-              <span className="bg-gradient-to-r from-white to-neutral-400 bg-clip-text text-transparent">
-                para agentes de IA
-              </span>
-            </h1>
-
-            <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-neutral-400 sm:text-lg">
-              Inboxes programáticas, webhooks em tempo real e domínios personalizados — ligados ao seu servidor de correio, com API REST completa e suporte a AI SDK.
-            </p>
-
-            <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <Link
-                href="/login"
-                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-white px-6 py-3 text-sm font-semibold text-neutral-950 transition-colors hover:bg-neutral-100 sm:w-auto"
-              >
-                Abrir console
-                <ArrowRight className="size-4" aria-hidden />
-              </Link>
-              <a
-                href="https://hubmail.to"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex w-full items-center justify-center rounded-lg border border-white/10 bg-white/5 px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-white/10 sm:w-auto"
-              >
-                Ver documentação
-              </a>
-            </div>
-          </div>
-        </section>
-
-        {/* Code + stats */}
-        <section className="border-y border-white/[0.06] bg-white/[0.02] px-4 py-16 sm:px-6 lg:px-8">
-          <div className="mx-auto max-w-6xl">
-            <div className="grid gap-8 lg:grid-cols-2 lg:items-center">
-              {/* Code block */}
-              <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#0d0d0d]">
-                <div className="flex items-center gap-1.5 border-b border-white/[0.06] px-4 py-3">
-                  <div className="size-3 rounded-full bg-red-500/70" />
-                  <div className="size-3 rounded-full bg-amber-500/70" />
-                  <div className="size-3 rounded-full bg-emerald-500/70" />
-                  <span className="ml-2 text-xs text-neutral-500">hubmail-agent.ts</span>
+          <div className="relative mx-auto max-w-6xl">
+            <div className="grid gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:items-stretch">
+              <div className="flex h-full min-w-0 flex-col space-y-6">
+                <div className="inline-flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium text-neutral-300">
+                  <span className="size-1.5 rounded-full bg-emerald-400" />
+                  Pronto para usar
                 </div>
-                <pre className="overflow-x-auto p-5 text-[13px] leading-relaxed">
-                  <code className="text-neutral-300">
-                    {CODE_SNIPPET.split("\n").map((line, i) => (
-                      <span key={i} className="block">
-                        {line
-                          .replace(/\/\/.*/g, (m) => `<comment>${m}</comment>`)
-                          .split(/(<comment>.*?<\/comment>)/g)
-                          .map((part, j) =>
-                            part.startsWith("<comment>") ? (
-                              <span key={j} className="text-neutral-600">
-                                {part.replace(/<\/?comment>/g, "")}
-                              </span>
-                            ) : (
-                              <span key={j}>{part}</span>
-                            ),
-                          )}
-                      </span>
-                    ))}
-                  </code>
-                </pre>
-              </div>
 
-              {/* Stats */}
-              <div className="space-y-6">
-                <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
-                  Infraestrutura de email pronta para produção
-                </h2>
-                <p className="text-neutral-400">
-                  Construído sobre protocolos abertos (JMAP, SMTP, IMAP) no seu servidor de correio. Você tem controle total dos dados e da infraestrutura.
+                <h1 className="text-3xl font-bold leading-tight tracking-tight sm:text-5xl lg:text-6xl">
+                  Crie Email como identidade para seus{" "}
+                  <span className="bg-gradient-to-r from-white to-neutral-400 bg-clip-text text-transparent">
+                    agentes de IA
+                  </span>
+                </h1>
+                <p className="text-sm leading-snug text-neutral-400 sm:text-base sm:leading-relaxed">
+                  Seu agente de IA precisa de uma caixa de entrada para se comunicar com o mundo real. 
+                  O HubMail fornece uma caixa de entrada para ele trabalhar para você.
                 </p>
                 <div className="grid grid-cols-2 gap-4">
-                  {stats.map(({ label, value }) => (
+                  {codeSideHighlightCards.map(({ title, body }) => (
                     <div
-                      key={label}
+                      key={title}
                       className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-4"
                     >
-                      <p className="text-xl font-bold text-white">{value}</p>
-                      <p className="mt-1 text-xs text-neutral-500">{label}</p>
+                      <p className="text-base font-bold leading-snug text-white sm:text-lg">{title}</p>
+                      <p className="mt-1.5 text-xs leading-snug text-neutral-500">{body}</p>
                     </div>
                   ))}
                 </div>
-                <div className="flex flex-col gap-2">
-                  {[
-                    "Integração JMAP nativa com o servidor de correio",
-                    "Assinatura HMAC em todos os webhooks",
-                    "Credenciais criptografadas AES-256-GCM",
-                  ].map((item) => (
-                    <div key={item} className="flex items-center gap-2 text-sm text-neutral-400">
-                      <Check className="size-4 shrink-0 text-emerald-400" />
-                      {item}
-                    </div>
-                  ))}
+                <div className="flex flex-col justify-center gap-3 sm:flex-row sm:flex-wrap">
+                  <Link
+                    href="/login"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-white px-6 py-3 text-sm font-semibold text-neutral-950 transition-colors hover:bg-neutral-100 sm:w-auto"
+                  >
+                    Abrir console
+                    <ArrowRight className="size-4" aria-hidden />
+                  </Link>
+                  <a
+                    href="https://hubmail.to"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex w-full items-center justify-center rounded-lg border border-white/10 bg-white/5 px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-white/10 sm:w-auto"
+                  >
+                    Ver documentação
+                  </a>
                 </div>
+              </div>
+
+              {/* Code block: coluna direita em lg; cartão estica à altura da linha */}
+              <div className="flex h-full min-w-0 flex-col rounded-xl border border-white/[0.08] bg-[#0d1117]">
+                <div className="shrink-0 border-b border-white/[0.08] bg-[#0d1117] px-3 py-2">
+                  <div className="flex items-center gap-1.5">
+                    <div className="size-3 rounded-full bg-red-500/70" />
+                    <div className="size-3 rounded-full bg-amber-500/70" />
+                    <div className="size-3 rounded-full bg-emerald-500/70" />
+                    <span className="ml-2 text-xs text-neutral-500">hubmail-agent.ts</span>
+                  </div>
+                </div>
+                <div
+                  className="home-code-shiki flex min-w-0 flex-1 flex-col rounded-b-xl px-3 py-3 text-[13px] [&_pre]:!m-0 [&_pre]:!max-h-none [&_pre]:!h-auto [&_pre]:!overflow-x-visible [&_pre]:!overflow-y-visible [&_pre]:!bg-transparent [&_pre]:!p-0 [&_pre]:!font-mono [&_pre]:!text-[13px] [&_pre]:!leading-[0.76] [&_pre]:!tracking-tight [&_code]:!block [&_code]:!font-mono [&_code]:!text-[13px] [&_code]:!leading-[0.76] [&_code]:!tracking-tight [&_.line]:!block [&_.line]:!leading-[0.76] [&_.line]:!py-0 [&_.line]:!my-0 [&_.line_span]:!leading-[0.76]"
+                  style={{ overflowX: "auto", overflowY: "visible" }}
+                  dangerouslySetInnerHTML={{ __html: codeHtml }}
+                />
               </div>
             </div>
           </div>
         </section>
+
+        {blogPosts.length > 0 ? <BlogPreviewCarousel posts={blogPosts} /> : null}
 
         {/* Features */}
         <section id="features" className="px-4 py-20 sm:px-6 lg:px-8">
@@ -337,6 +305,7 @@ export default function HomePage() {
             <span className="text-sm text-neutral-600">· Construído sobre protocolos abertos</span>
           </div>
           <nav className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-neutral-500">
+            <Link href="/blog" className="hover:text-neutral-300 transition-colors">Blog</Link>
             <Link href="/terms" className="hover:text-neutral-300 transition-colors">Termos</Link>
             <Link href="/privacy" className="hover:text-neutral-300 transition-colors">Privacidade</Link>
             <a href="https://hubmail.to" target="_blank" rel="noopener noreferrer" className="hover:text-neutral-300 transition-colors">Docs</a>

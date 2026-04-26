@@ -26,3 +26,10 @@ html.dark,
 body {
   font-family: var(--font-sans);
 }
+
+/* Bloco de código da home (Shiki): evita altura máxima/scroll vertical no <pre> */
+.home-code-shiki pre {
+  max-height: none !important;
+  overflow-x: visible !important;
+  overflow-y: visible !important;
+}

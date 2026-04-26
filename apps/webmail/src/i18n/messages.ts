@@ -69,6 +69,14 @@ export const messages = {
       eyebrow: "HubMail Legal",
       updatedAt: "Última atualização",
     },
+    blog: {
+      backHome: "Voltar para home",
+      eyebrow: "HubMail Blog",
+      title: "Blog",
+      description: "Notas sobre email programático, agentes e infraestrutura.",
+      readMore: "Ler artigo",
+      published: "Publicado em",
+    },
     sidebar: {
       nav: {
         overview: "Visão geral",
@@ -552,6 +560,14 @@ export const messages = {
       eyebrow: "HubMail Legal",
       updatedAt: "Last updated",
     },
+    blog: {
+      backHome: "Back to home",
+      eyebrow: "HubMail Blog",
+      title: "Blog",
+      description: "Notes on programmatic email, agents, and infrastructure.",
+      readMore: "Read post",
+      published: "Published",
+    },
     sidebar: {
       nav: {
         overview: "Overview",
@@ -1034,6 +1050,14 @@ export const messages = {
       backHome: "Volver al inicio",
       eyebrow: "HubMail Legal",
       updatedAt: "Última actualización",
+    },
+    blog: {
+      backHome: "Volver al inicio",
+      eyebrow: "HubMail Blog",
+      title: "Blog",
+      description: "Notas sobre correo programático, agentes y infraestructura.",
+      readMore: "Leer artículo",
+      published: "Publicado el",
     },
     sidebar: {
       nav: {
