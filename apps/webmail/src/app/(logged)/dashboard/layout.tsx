@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { AppSidebar } from "@/components/dashboard/app-sidebar";
+import { DashboardComposeRoot } from "@/components/dashboard/dashboard-compose-root";
 import { WorkspaceGate } from "@/components/workspace/workspace-gate";
 import { getMessages } from "@/i18n/messages";
 import { getServerLocale } from "@/i18n/server";
@@ -25,7 +26,9 @@ export default async function LoggedLayout({ children }: { children: React.React
     <WorkspaceGate>
       <div className="flex min-h-screen bg-white dark:bg-[#0a0a0a]">
         <AppSidebar userLabel={userLabel} />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col pt-14 lg:pt-0">{children}</div>
+        <DashboardComposeRoot>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col pt-14 lg:pt-0">{children}</div>
+        </DashboardComposeRoot>
       </div>
     </WorkspaceGate>
   );

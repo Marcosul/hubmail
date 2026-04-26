@@ -91,8 +91,9 @@ export function useMailStream(mailboxId: string | undefined): void {
                 mailboxId: string;
               };
               if (event.mailboxId === mailboxId) {
-                qc.invalidateQueries({ queryKey: ["mail-threads", mailboxId] });
-                qc.invalidateQueries({ queryKey: ["mail-folders", mailboxId] });
+                // Threads: lista. Pastas: badges — invalidateQueries garante refetch das ativas.
+                void qc.refetchQueries({ queryKey: ["mail-threads", mailboxId], type: "active" });
+                void qc.invalidateQueries({ queryKey: ["mail-folders", mailboxId] });
               }
             } catch {
               // mensagem malformada

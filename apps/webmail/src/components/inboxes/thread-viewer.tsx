@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { Star, Trash2, CornerUpLeft } from "lucide-react";
 import { useThread } from "@/hooks/use-mail";
 import type { ComposeDraft } from "@/components/inboxes/inbox-compose-provider";
@@ -22,7 +23,7 @@ function formatDate(input: string | Date, locale: AppLocale) {
   return date.toLocaleString(getLocaleDateFormat(locale));
 }
 
-export function ThreadViewer({
+function ThreadViewerInner({
   mailboxId,
   threadId,
   onDelete,
@@ -33,9 +34,9 @@ export function ThreadViewer({
   const { locale, messages } = useI18n();
   const copy = messages.inboxes;
   const composeCopy = messages.compose;
-  const { data, isLoading, isError, error, refetch } = useThread(mailboxId, threadId);
+  const { data, isPending, isError, error, refetch } = useThread(mailboxId, threadId);
 
-  if (isLoading) {
+  if (isPending) {
     return <p className="px-4 py-10 text-center text-sm text-neutral-500">{messages.common.loading}</p>;
   }
   if (isError || !data) {
@@ -191,3 +192,5 @@ export function ThreadViewer({
     </div>
   );
 }
+
+export const ThreadViewer = memo(ThreadViewerInner);

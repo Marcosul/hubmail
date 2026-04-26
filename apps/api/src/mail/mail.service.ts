@@ -9,6 +9,7 @@ import type {
   EmailMessage,
   MailAddress,
   MailFolderSummary,
+  SaveComposeDraftResult,
   SendMailResult,
   ThreadPage,
   ThreadSummary,
@@ -22,6 +23,7 @@ import { SmtpService } from './smtp.service';
 import type { JmapEmail } from './jmap.types';
 import type { SendMailDto } from './dto/send-mail.dto';
 import type { PatchMessageDto } from './dto/patch-message.dto';
+import type { SaveComposeDraftDto } from './dto/save-compose-draft.dto';
 
 const c = {
   reset: '\x1b[0m',
@@ -94,6 +96,47 @@ export class MailService {
     }
   }
 
+  async saveComposeDraft(
+    workspaceId: string,
+    dto: SaveComposeDraftDto,
+  ): Promise<SaveComposeDraftResult> {
+    const { mailbox, credentials } = await this.mailboxes.resolveCredentials(workspaceId, dto.mailboxId);
+    const folders = await this.withJmapGuard(workspaceId, dto.mailboxId, () =>
+      this.jmap.listMailboxes(credentials),
+    );
+    const draftsFolder = folders.find((f) => f.role === 'drafts');
+    if (!draftsFolder) {
+      this.log.warn(
+        `${c.yellow}📭${c.reset} mailbox ${c.magenta}${mailbox.address}${c.reset} sem pasta role=drafts`,
+      );
+      throw new BadRequestException('Conta sem pasta de rascunhos (JMAP).');
+    }
+
+    const toAddrs = (dto.to ?? []).map((e) => ({ email: e.trim() })).filter((a) => a.email.length > 0);
+    const ccAddrs = (dto.cc ?? []).map((e) => ({ email: e.trim() })).filter((a) => a.email.length > 0);
+
+    const { id, threadId } = await this.withJmapGuard(workspaceId, dto.mailboxId, () =>
+      this.jmap.upsertComposeDraft(credentials, {
+        draftsMailboxId: draftsFolder.id,
+        fromEmail: mailbox.address,
+        fromName: mailbox.displayName,
+        to: toAddrs,
+        cc: ccAddrs,
+        subject: dto.subject,
+        bodyText: dto.text,
+        inReplyTo: dto.inReplyTo,
+        references: dto.references,
+        replaceEmailId: dto.replaceEmailId?.trim() || undefined,
+      }),
+    );
+
+    this.log.log(
+      `${c.green}📝${c.reset} rascunho ${c.cyan}${id}${c.reset} na mailbox ${c.magenta}${mailbox.address}${c.reset}`,
+    );
+    void this.stream.publish({ type: 'mail.updated', workspaceId, mailboxId: mailbox.id });
+    return { emailId: id, threadId };
+  }
+
   async listMailboxes(workspaceId: string, mailboxId: string): Promise<MailFolderSummary[]> {
     const { credentials } = await this.mailboxes.resolveCredentials(workspaceId, mailboxId);
     const folders = await this.withJmapGuard(workspaceId, mailboxId, () =>
@@ -149,6 +192,7 @@ export class MailService {
       ]);
       const threads: ThreadSummary[] = rows.map((row) => ({
         id: `${MailService.OUTGOING_THREAD_PREFIX}${row.id}`,
+        anchorEmailId: `outgoing-message:${row.id}`,
         subject: row.subject ?? '(sem assunto)',
         from: { email: row.fromAddr },
         preview: row.bodyText?.slice(0, 220) || stripHtml(row.bodyHtml ?? '').slice(0, 220),
@@ -180,6 +224,7 @@ export class MailService {
       const flags = Object.keys(e.keywords ?? {}).filter((k) => k.startsWith('$'));
       return {
         id: e.threadId,
+        anchorEmailId: e.id,
         subject: e.subject ?? '(sem assunto)',
         from: firstAddress(e.from),
         preview: e.preview ?? '',

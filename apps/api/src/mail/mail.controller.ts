@@ -11,13 +11,14 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import type { User } from '@supabase/supabase-js';
-import type { ServerResponse } from 'node:http';
+import type { FastifyReply } from 'fastify';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { SupabaseJwtAuthGuard } from '../auth/guards/supabase-jwt-auth.guard';
 import { CurrentWorkspace } from '../tenancy/current-workspace.decorator';
 import { WorkspaceGuard } from '../tenancy/workspace.guard';
 import type { WorkspaceContext } from '../tenancy/workspace-context';
 import { PatchMessageDto } from './dto/patch-message.dto';
+import { SaveComposeDraftDto } from './dto/save-compose-draft.dto';
 import { SendMailDto } from './dto/send-mail.dto';
 import { MailService } from './mail.service';
 import { MailStreamService } from './mail-stream.service';
@@ -40,17 +41,21 @@ export class MailController {
   @ApiOperation({ summary: 'SSE: eventos em tempo real do mailbox' })
   @ApiQuery({ name: 'mailboxId', required: true })
   async streamEvents(
-    @Res() reply: { raw: ServerResponse },
+    @Res() reply: FastifyReply,
     @Query('mailboxId') mailboxId: string,
     @CurrentWorkspace() ws: WorkspaceContext,
   ): Promise<void> {
-    const { raw } = reply;
+    // Diz ao Fastify que vamos gerir a resposta manualmente (SSE de longa duração).
+    // Sem isto o Fastify tenta chamar reply.send() ao retornar o handler async.
+    reply.hijack();
+    const raw = reply.raw;
+
     raw.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     raw.setHeader('Cache-Control', 'no-cache, no-transform');
     raw.setHeader('Connection', 'keep-alive');
     raw.setHeader('X-Accel-Buffering', 'no');
     raw.writeHead(200);
-    raw.write(':\n\n'); // comentário inicial (mantém conexão viva em proxies)
+    raw.write(':\n\n'); // comentário inicial — mantém conexão viva em proxies
 
     const sub = this.mailStream.createStream(ws.workspaceId, mailboxId).subscribe({
       next: (event) => {
@@ -158,5 +163,11 @@ export class MailController {
     @Body() dto: SendMailDto,
   ) {
     return this.mail.send(ws.workspaceId, user.id, dto);
+  }
+
+  @Post('compose-draft')
+  @ApiOperation({ summary: 'Guarda rascunho na pasta Drafts (JMAP)' })
+  saveComposeDraft(@CurrentWorkspace() ws: WorkspaceContext, @Body() dto: SaveComposeDraftDto) {
+    return this.mail.saveComposeDraft(ws.workspaceId, dto);
   }
 }

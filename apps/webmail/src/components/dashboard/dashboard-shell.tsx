@@ -15,6 +15,8 @@ export function DashboardShell({
   subtitle,
   actions,
   breadcrumb,
+  contentClassName,
+  headerClassName,
 }: {
   children: React.ReactNode;
   title?: string;
@@ -22,6 +24,10 @@ export function DashboardShell({
   actions?: React.ReactNode;
   /** When set, replaces the default pathname-based breadcrumb. */
   breadcrumb?: React.ReactNode;
+  /** Merged into the main content wrapper (below header). */
+  contentClassName?: string;
+  /** Merged into the page header (breadcrumb / title row). */
+  headerClassName?: string;
 }) {
   const pathname = usePathname();
   const { messages } = useI18n();
@@ -44,11 +50,16 @@ export function DashboardShell({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-[#0a0a0a]">
-      <header className="border-b border-neutral-200 px-4 py-4 dark:border-hub-border sm:px-6 sm:py-5 lg:px-8">
+      <header
+        className={cn(
+          "border-b border-neutral-200 px-4 py-4 dark:border-hub-border sm:px-6 sm:py-5 lg:px-8",
+          headerClassName,
+        )}
+      >
         {breadcrumb ? (
-          <div className="mb-2 text-xs text-neutral-500 dark:text-neutral-500">{breadcrumb}</div>
+          <div className="mb-2 text-sm text-neutral-500 dark:text-neutral-500">{breadcrumb}</div>
         ) : (
-        <nav className="mb-2 text-xs text-neutral-500 dark:text-neutral-500" aria-label={messages.common.breadcrumb}>
+        <nav className="mb-2 text-sm text-neutral-500 dark:text-neutral-500" aria-label={messages.common.breadcrumb}>
           <ol className="flex flex-wrap items-center gap-1.5">
             {crumbs.map((c, i) => (
               <li key={`${c.label}-${i}`} className="flex items-center gap-1.5">
@@ -75,7 +86,7 @@ export function DashboardShell({
           {actions ? <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0">{actions}</div> : null}
         </div>
       </header>
-      <div className={cn("flex-1 overflow-auto px-4 py-4 sm:px-6 sm:py-6 lg:px-8")}>{children}</div>
+      <div className={cn("flex-1 overflow-auto px-4 py-4 sm:px-6 sm:py-6 lg:px-8", contentClassName)}>{children}</div>
     </div>
   );
 }

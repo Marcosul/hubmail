@@ -172,16 +172,31 @@ model Mailbox {
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
-  workspace  Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  domain     Domain            @relation(fields: [domainId], references: [id], onDelete: Cascade)
-  credential MailCredential?   @relation("MailboxCredential", fields: [credentialId], references: [id], onDelete: SetNull)
-  outgoing   OutgoingMessage[]
-  events     InboxEvent[]
-  index      MessageIndex[]
+  workspace   Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  domain      Domain               @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  credential  MailCredential?      @relation("MailboxCredential", fields: [credentialId], references: [id], onDelete: SetNull)
+  outgoing    OutgoingMessage[]
+  events      InboxEvent[]
+  index       MessageIndex[]
+  savedLabels MailboxSavedLabel[]
 
   @@unique([workspaceId, address])
   @@index([domainId])
   @@map("mailboxes")
+}
+
+/// User-defined label names per mailbox for quick filtering in webmail (not JMAP flags).
+model MailboxSavedLabel {
+  id        String   @id @default(uuid()) @db.Uuid
+  mailboxId String @map("mailbox_id") @db.Uuid
+  name      String   @db.VarChar(128)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  mailbox Mailbox @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+
+  @@unique([mailboxId, name])
+  @@index([mailboxId])
+  @@map("mailbox_saved_labels")
 }
 
 model MailCredential {

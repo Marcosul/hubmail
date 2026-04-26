@@ -13,6 +13,8 @@ import type {
   MailboxSummary,
   MailFolderSummary,
   PatchMessageInput,
+  SaveComposeDraftInput,
+  SaveComposeDraftResult,
   SendMailInput,
   SendMailResult,
   ThreadPage,
@@ -44,7 +46,10 @@ export function useMailFolders(mailboxId: string | undefined) {
     queryFn: () =>
       apiRequest<FolderListResult>(`/api/mail/mailboxes${buildQuery({ mailboxId: mailboxId! })}`),
     enabled: Boolean(mailboxId),
-    staleTime: 30_000,
+    // Mesmo intervalo que threads: sem SSE (Redis) só o polling mantém lista e badges alinhados.
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+    staleTime: 10_000,
   });
 }
 
@@ -65,8 +70,7 @@ export function useThreads(
         })}`,
       ),
     enabled: Boolean(mailboxId),
-    // SSE invalida o cache em tempo real; polling a 30s é fallback para ambientes
-    // sem Redis ou serverless.
+    // SSE chama refetch; polling é fallback para ambientes sem stream.
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
     staleTime: 10_000,
@@ -102,7 +106,15 @@ type PatchArgs = {
   emailId: string;
   mailboxId: string;
   threadId?: string;
+  /** Pasta atual na UI — ajuste otimista de `unreadEmails` no badge da sidebar. */
+  folderIdForBadge?: string;
   patch: Omit<PatchMessageInput, "moveToMailbox"> & { moveToMailbox?: string };
+};
+
+type PatchMutateCtx = {
+  prevThreadsQueries?: [readonly unknown[], ThreadPage | undefined][];
+  prevFoldersData?: FolderListResult;
+  foldersMailboxId?: string;
 };
 
 export function usePatchMessage(): UseMutationResult<{ ok: boolean }, Error, PatchArgs> {
@@ -114,45 +126,66 @@ export function usePatchMessage(): UseMutationResult<{ ok: boolean }, Error, Pat
         body: { ...patch, mailboxId },
       }),
 
-    onMutate: async ({ mailboxId, threadId, patch }) => {
-      if (!threadId) return;
+    onMutate: async ({ mailboxId, threadId, patch, folderIdForBadge }) => {
+      let prevThreadsQueries: PatchMutateCtx["prevThreadsQueries"];
+      if (threadId) {
+        await qc.cancelQueries({ queryKey: ["mail-threads", mailboxId] });
+        prevThreadsQueries = qc.getQueriesData<ThreadPage>({
+          queryKey: ["mail-threads", mailboxId],
+        });
+        qc.setQueriesData<ThreadPage>(
+          { queryKey: ["mail-threads", mailboxId] },
+          (old) => {
+            if (!old) return old;
+            if (patch.delete) {
+              return { ...old, threads: old.threads.filter((t) => t.id !== threadId) };
+            }
+            return {
+              ...old,
+              threads: old.threads.map((t): ThreadSummary => {
+                if (t.id !== threadId) return t;
+                return {
+                  ...t,
+                  starred: patch.starred !== undefined ? patch.starred : t.starred,
+                  unread: patch.unread !== undefined ? patch.unread : t.unread,
+                };
+              }),
+            };
+          },
+        );
+      }
 
-      // Cancela refetch em andamento para não sobrescrever o optimistic update
-      await qc.cancelQueries({ queryKey: ["mail-threads", mailboxId] });
+      let prevFoldersData: FolderListResult | undefined;
+      let foldersMailboxId: string | undefined;
+      if (folderIdForBadge && typeof patch.unread === "boolean") {
+        const snap = qc.getQueryData<FolderListResult>(["mail-folders", mailboxId]);
+        if (snap !== undefined) {
+          prevFoldersData = snap;
+          foldersMailboxId = mailboxId;
+          await qc.cancelQueries({ queryKey: ["mail-folders", mailboxId] });
+          qc.setQueryData<FolderListResult>(["mail-folders", mailboxId], (old) => {
+            if (!old) return old;
+            return old.map((f) => {
+              if (f.id !== folderIdForBadge) return f;
+              const delta = patch.unread ? 1 : -1;
+              return { ...f, unreadEmails: Math.max(0, f.unreadEmails + delta) };
+            });
+          });
+        }
+      }
 
-      const prevThreadsQueries = qc.getQueriesData<ThreadPage>({
-        queryKey: ["mail-threads", mailboxId],
-      });
-
-      qc.setQueriesData<ThreadPage>(
-        { queryKey: ["mail-threads", mailboxId] },
-        (old) => {
-          if (!old) return old;
-          if (patch.delete) {
-            return { ...old, threads: old.threads.filter((t) => t.id !== threadId) };
-          }
-          return {
-            ...old,
-            threads: old.threads.map((t): ThreadSummary => {
-              if (t.id !== threadId) return t;
-              return {
-                ...t,
-                starred: patch.starred !== undefined ? patch.starred : t.starred,
-                unread: patch.unread !== undefined ? patch.unread : t.unread,
-              };
-            }),
-          };
-        },
-      );
-
-      return { prevThreadsQueries };
+      return { prevThreadsQueries, prevFoldersData, foldersMailboxId } satisfies PatchMutateCtx;
     },
 
     onError: (_err, _vars, ctx) => {
-      // Rollback em caso de erro
-      if (!ctx?.prevThreadsQueries) return;
-      for (const [key, data] of ctx.prevThreadsQueries) {
-        qc.setQueryData(key, data);
+      const c = ctx as PatchMutateCtx | undefined;
+      if (c?.prevThreadsQueries) {
+        for (const [key, data] of c.prevThreadsQueries) {
+          qc.setQueryData(key, data);
+        }
+      }
+      if (c?.prevFoldersData !== undefined && c.foldersMailboxId) {
+        qc.setQueryData(["mail-folders", c.foldersMailboxId], c.prevFoldersData);
       }
     },
 
@@ -160,6 +193,7 @@ export function usePatchMessage(): UseMutationResult<{ ok: boolean }, Error, Pat
       qc.invalidateQueries({ queryKey: ["mail-threads", vars.mailboxId] });
       qc.invalidateQueries({ queryKey: ["mail-thread", vars.mailboxId] });
       qc.invalidateQueries({ queryKey: ["mail-message", vars.mailboxId] });
+      qc.invalidateQueries({ queryKey: ["mail-folders", vars.mailboxId] });
     },
   });
 }
@@ -172,6 +206,23 @@ export function useSendMail(): UseMutationResult<SendMailResult, Error, SendMail
     onSuccess: (_, vars) => {
       // SSE notifica o backend; aqui invalidamos preventivamente caso SSE falhe
       qc.invalidateQueries({ queryKey: ["mail-threads", vars.mailboxId] });
+      qc.invalidateQueries({ queryKey: ["mail-folders", vars.mailboxId] });
+    },
+  });
+}
+
+export function useSaveComposeDraft(): UseMutationResult<
+  SaveComposeDraftResult,
+  Error,
+  SaveComposeDraftInput
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input) =>
+      apiRequest<SaveComposeDraftResult>("/api/mail/compose-draft", { method: "POST", body: input }),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ["mail-threads", vars.mailboxId] });
+      qc.invalidateQueries({ queryKey: ["mail-folders", vars.mailboxId] });
     },
   });
 }

@@ -4,11 +4,7 @@ import Link from "next/link";
 import { Mail, RefreshCw, Star, Tag } from "lucide-react";
 import { useMemo, useState } from "react";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
-import {
-  InboxComposeDock,
-  InboxComposeProvider,
-  InboxComposeTrigger,
-} from "@/components/inboxes/inbox-compose-provider";
+import { InboxComposeTrigger } from "@/components/inboxes/inbox-compose-provider";
 import { useMailFolders, useMailboxes, useThreads } from "@/hooks/use-mail";
 import { getLocaleDateFormat, useI18n } from "@/i18n/client";
 import type { AppLocale } from "@/i18n/config";
@@ -31,14 +27,6 @@ function formatRelative(dateString: string | Date, locale: AppLocale) {
 }
 
 export default function UnifiedInboxPage() {
-  return (
-    <InboxComposeProvider>
-      <UnifiedInboxContent />
-    </InboxComposeProvider>
-  );
-}
-
-function UnifiedInboxContent() {
   const { locale, messages } = useI18n();
   const copy = messages.inboxes;
   const { data: mailboxes, isLoading: loadingMailboxes } = useMailboxes();
@@ -82,6 +70,12 @@ function UnifiedInboxContent() {
           ) : null}
           {sortedFolders.map((folder) => {
             const active = folder.id === currentFolderId;
+            const role = (folder.role ?? "").toLowerCase();
+            const isDrafts =
+              role === "drafts" ||
+              role === "draft" ||
+              folder.name.toLowerCase().includes("draft");
+            const badge = isDrafts ? folder.totalEmails : folder.unreadEmails;
             return (
               <button
                 key={folder.id}
@@ -95,9 +89,9 @@ function UnifiedInboxContent() {
                 )}
               >
                 <span className="truncate">{folder.name}</span>
-                {folder.unreadEmails > 0 ? (
+                {badge > 0 ? (
                   <span className="ml-2 shrink-0 rounded bg-neutral-900 px-1.5 text-[10px] font-medium text-white dark:bg-white dark:text-neutral-900">
-                    {folder.unreadEmails}
+                    {badge}
                   </span>
                 ) : null}
               </button>
@@ -181,7 +175,6 @@ function UnifiedInboxContent() {
           </div>
         </DashboardShell>
       </div>
-      <InboxComposeDock mailboxId={activeMailbox?.id} />
     </div>
   );
 }

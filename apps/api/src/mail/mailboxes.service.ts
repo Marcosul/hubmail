@@ -522,4 +522,70 @@ export class MailboxesService {
     this.log.log(`${c.magenta}🗑️  mailbox ${mailbox.address} removida${c.reset}`);
     return { ok: true };
   }
+
+  private normalizeSavedLabelFragment(fragment: string): string {
+    const t = fragment.trim().toLowerCase();
+    if (!t) {
+      throw new BadRequestException('empty label');
+    }
+    if (t.length > 128) {
+      throw new BadRequestException('label too long');
+    }
+    if (/[<>"]/.test(t)) {
+      throw new BadRequestException('invalid characters in label');
+    }
+    return t;
+  }
+
+  async listSavedLabels(workspaceId: string, mailboxId: string) {
+    await this.getOrThrow(workspaceId, mailboxId);
+    const rows = await this.prisma.mailboxSavedLabel.findMany({
+      where: { mailboxId },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, createdAt: true },
+    });
+    this.log.debug(
+      `${c.cyan}📑${c.reset} listadas ${rows.length} etiquetas guardadas (mailbox ${c.magenta}${mailboxId}${c.reset})`,
+    );
+    return rows;
+  }
+
+  async addSavedLabelsFromRaw(workspaceId: string, mailboxId: string, raw: string) {
+    await this.getOrThrow(workspaceId, mailboxId);
+    const parts = raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (parts.length === 0) {
+      throw new BadRequestException('no labels provided');
+    }
+    const normalized: string[] = [];
+    for (const p of parts) {
+      const n = this.normalizeSavedLabelFragment(p);
+      if (!normalized.includes(n)) normalized.push(n);
+    }
+
+    await this.prisma.mailboxSavedLabel.createMany({
+      data: normalized.map((name) => ({ mailboxId, name })),
+      skipDuplicates: true,
+    });
+
+    const count = await this.prisma.mailboxSavedLabel.count({ where: { mailboxId } });
+    this.log.log(
+      `${c.green}➕${c.reset} etiquetas guardadas: ${c.magenta}${normalized.join(', ')}${c.reset} (total na mailbox: ${count})`,
+    );
+    return this.listSavedLabels(workspaceId, mailboxId);
+  }
+
+  async removeSavedLabel(workspaceId: string, mailboxId: string, labelId: string) {
+    await this.getOrThrow(workspaceId, mailboxId);
+    const deleted = await this.prisma.mailboxSavedLabel.deleteMany({
+      where: { id: labelId, mailboxId },
+    });
+    if (deleted.count === 0) {
+      throw new NotFoundException('label not found');
+    }
+    this.log.log(`${c.yellow}🧹${c.reset} etiqueta guardada ${labelId} removida`);
+    return { ok: true } as const;
+  }
 }

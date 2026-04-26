@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
-import { Paperclip, Send, X } from "lucide-react";
-import { useSendMail } from "@/hooks/use-mail";
+import { useEffect, useId, useRef, useState } from "react";
+import { ChevronDown, Maximize2, Paperclip, Send, Shrink, X } from "lucide-react";
+import { usePatchMessage, useSaveComposeDraft, useSendMail } from "@/hooks/use-mail";
 import type { ComposeDraft } from "@/components/inboxes/inbox-compose-provider";
 import { useI18n } from "@/i18n/client";
 import { cn } from "@/lib/utils";
@@ -10,9 +10,16 @@ import { cn } from "@/lib/utils";
 type EmailComposerCardProps = {
   className?: string;
   compact?: boolean;
+  /** Taller editor when dock is maximized (Gmail-style). */
+  compactMaximized?: boolean;
   onClose?: () => void;
   mailboxId?: string;
   initialDraft?: ComposeDraft;
+  /** Sync subject line to dock chrome (e.g. minimized tab title). */
+  onHeadlineChange?: (subject: string) => void;
+  onMinimize?: () => void;
+  onToggleMaximize?: () => void;
+  maximized?: boolean;
 };
 
 function splitAddresses(value: string): string[] {
@@ -28,9 +35,14 @@ const inputClass =
 export function EmailComposerCard({
   className,
   compact = false,
+  compactMaximized = false,
   onClose,
   mailboxId,
   initialDraft,
+  onHeadlineChange,
+  onMinimize,
+  onToggleMaximize,
+  maximized = false,
 }: EmailComposerCardProps) {
   const uid = useId();
   const { messages } = useI18n();
@@ -43,6 +55,11 @@ export function EmailComposerCard({
   const [showCc, setShowCc] = useState(Boolean(initialDraft?.cc));
   const [error, setError] = useState<string | null>(null);
   const send = useSendMail();
+  const saveDraft = useSaveComposeDraft();
+  const patchMessage = usePatchMessage();
+  const draftJmapIdRef = useRef<string | null>(null);
+  const draftSaveChainRef = useRef(Promise.resolve());
+  const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialDraftReferencesKey =
     initialDraft?.references?.join(",") ?? "";
 
@@ -63,6 +80,69 @@ export function EmailComposerCard({
     initialDraftReferencesKey,
   ]);
 
+  useEffect(() => {
+    onHeadlineChange?.(subject);
+  }, [subject, onHeadlineChange]);
+
+  /** Auto-grava rascunho na pasta Drafts (JMAP) com debounce; rotações create+destroy ficam serializadas. */
+  useEffect(() => {
+    if (!mailboxId) {
+      draftJmapIdRef.current = null;
+      return;
+    }
+    const hasContent =
+      to.trim().length > 0 || subject.trim().length > 0 || body.trim().length > 0;
+    if (!hasContent) {
+      return;
+    }
+
+    if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+    draftSaveTimerRef.current = setTimeout(() => {
+      draftSaveTimerRef.current = null;
+      const snapshot = {
+        mailboxId,
+        to,
+        cc,
+        subject: subject.trim(),
+        text: body,
+        inReplyTo: initialDraft?.inReplyTo,
+        references: initialDraft?.references,
+      };
+      draftSaveChainRef.current = draftSaveChainRef.current
+        .catch(() => {})
+        .then(async () => {
+          try {
+            const res = await saveDraft.mutateAsync({
+              mailboxId: snapshot.mailboxId,
+              replaceEmailId: draftJmapIdRef.current ?? undefined,
+              to: splitAddresses(snapshot.to),
+              cc: splitAddresses(snapshot.cc),
+              subject: snapshot.subject,
+              text: snapshot.text,
+              inReplyTo: snapshot.inReplyTo,
+              references: snapshot.references,
+            });
+            draftJmapIdRef.current = res.emailId;
+          } catch {
+            // falha JMAP / rede — não bloquear o utilizador
+          }
+        });
+    }, 1200);
+
+    return () => {
+      if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+    };
+  }, [
+    mailboxId,
+    to,
+    cc,
+    subject,
+    body,
+    initialDraft?.inReplyTo,
+    initialDraftReferencesKey,
+    saveDraft,
+  ]);
+
   async function handleSend() {
     setError(null);
     if (!mailboxId) {
@@ -79,6 +159,12 @@ export function EmailComposerCard({
       setError(copy.emptyBody);
       return;
     }
+    if (draftSaveTimerRef.current) {
+      clearTimeout(draftSaveTimerRef.current);
+      draftSaveTimerRef.current = null;
+    }
+    await draftSaveChainRef.current.catch(() => {});
+    const draftIdToRemove = draftJmapIdRef.current;
     try {
       await send.mutateAsync({
         mailboxId,
@@ -89,6 +175,18 @@ export function EmailComposerCard({
         inReplyTo: initialDraft?.inReplyTo,
         references: initialDraft?.references,
       });
+      draftJmapIdRef.current = null;
+      if (draftIdToRemove) {
+        try {
+          await patchMessage.mutateAsync({
+            emailId: draftIdToRemove,
+            mailboxId,
+            patch: { delete: true },
+          });
+        } catch {
+          /* JMAP notFound se o auto-save já rotacionou / apagou o rascunho */
+        }
+      }
       onClose?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : copy.sendError);
@@ -102,7 +200,9 @@ export function EmailComposerCard({
       className={cn(
         "flex flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white dark:border-hub-border dark:bg-[#0f0f0f]",
         compact
-          ? "h-[min(580px,85dvh)] max-h-[90dvh] min-h-[280px]"
+          ? compactMaximized
+            ? "min-h-0 flex-1 max-h-full"
+            : "h-[min(580px,85dvh)] max-h-[90dvh] min-h-[280px]"
           : "min-h-[min(520px,75dvh)]",
         className,
       )}
@@ -113,7 +213,27 @@ export function EmailComposerCard({
         <h2 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
           {initialDraft?.inReplyTo ? copy.reply : copy.newMessage}
         </h2>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5">
+          {onMinimize ? (
+            <button
+              type="button"
+              className="rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-white/10"
+              aria-label={copy.minimize}
+              onClick={onMinimize}
+            >
+              <ChevronDown className="size-4" />
+            </button>
+          ) : null}
+          {onToggleMaximize ? (
+            <button
+              type="button"
+              className="rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-white/10"
+              aria-label={maximized ? copy.restoreSize : copy.maximize}
+              onClick={onToggleMaximize}
+            >
+              {maximized ? <Shrink className="size-4" /> : <Maximize2 className="size-4" />}
+            </button>
+          ) : null}
           {onClose ? (
             <button
               type="button"
@@ -193,10 +313,12 @@ export function EmailComposerCard({
             placeholder={copy.body}
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            rows={compact ? 8 : 12}
+            rows={compact ? (compactMaximized ? 16 : 8) : 12}
             className={cn(
               "min-h-0 w-full min-w-0 flex-1 resize-y rounded-md border border-neutral-200 bg-white px-2.5 py-2 text-sm leading-relaxed text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-neutral-400 focus:ring-1 focus:ring-neutral-400 dark:border-hub-border dark:bg-[#141414] dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:border-white/30 dark:focus:ring-white/20",
-              compact ? "min-h-[140px]" : "min-h-[200px]",
+              compact && !compactMaximized && "min-h-[140px]",
+              compact && compactMaximized && "min-h-[min(320px,40dvh)]",
+              !compact && "min-h-[200px]",
             )}
           />
         </div>

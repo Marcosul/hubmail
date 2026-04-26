@@ -1,6 +1,11 @@
 import { BadGatewayException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createTransport, type Transporter } from 'nodemailer';
+import {
+  preferIpv4FromEnv,
+  resolveSmtpConnectEndpoint,
+  type SmtpConnectEndpoint,
+} from './smtp-connect-endpoint';
 
 const c = {
   reset: '\x1b[0m',
@@ -32,8 +37,7 @@ export interface SmtpEnvelope {
 export class SmtpService {
   private readonly log = new Logger(SmtpService.name);
   private isLikelyTlsModeMismatch(error: unknown): boolean {
-    const text = (error instanceof Error ? error.message : String(error ?? ''))
-      .toLowerCase();
+    const text = (error instanceof Error ? error.message : String(error ?? '')).toLowerCase();
     return (
       text.includes('wrong version number') ||
       text.includes('ssl3_get_record') ||
@@ -42,7 +46,6 @@ export class SmtpService {
       text.includes('greeting never received')
     );
   }
-
 
   constructor(private readonly config: ConfigService) {}
 
@@ -74,45 +77,62 @@ export class SmtpService {
     return [587, 2525, 2587].includes(port);
   }
 
-  private buildTransporter(
-    auth: { user: string; pass: string },
-    port: number,
-    options?: { secureOverride?: boolean },
-  ): Transporter {
+  private getConfiguredHost(): string {
     const host = this.config.get<string>('STALWART_SMTP_HOST')?.trim();
     if (!host) {
       throw new BadGatewayException('Defina STALWART_SMTP_HOST no .env');
     }
-    const secure = options?.secureOverride ?? this.useImplicitTls(port);
+    return host;
+  }
+
+  private async resolveEndpoint(): Promise<SmtpConnectEndpoint> {
+    const logical = this.getConfiguredHost();
+    const prefer = preferIpv4FromEnv(this.config.get<string>('STALWART_SMTP_PREFER_IPV4'));
+    const endpoint = await resolveSmtpConnectEndpoint(logical, prefer);
+    if (endpoint.servername) {
+      this.log.log(
+        `${c.cyan}🌐${c.reset} SMTP endpoint: ${c.magenta}${logical}${c.reset} → ${c.magenta}${endpoint.host}${c.reset} (SNI ${c.magenta}${endpoint.servername}${c.reset})`,
+      );
+    } else {
+      this.log.log(`${c.cyan}🌐${c.reset} SMTP endpoint: ${c.magenta}${endpoint.host}${c.reset}`);
+    }
+    return endpoint;
+  }
+
+  private buildTransporter(
+    auth: { user: string; pass: string },
+    port: number,
+    options: { secureOverride?: boolean; endpoint: SmtpConnectEndpoint },
+  ): Transporter {
+    const { endpoint } = options;
+    const secure = options.secureOverride ?? this.useImplicitTls(port);
     const requireTLS = this.useRequireTls(port, secure);
+    const tls = endpoint.servername ? { servername: endpoint.servername } : undefined;
     this.log.log(
-      `${c.magenta}🔐${c.reset} SMTP socket host=${host} port=${port} secure=${secure} requireTLS=${requireTLS}`,
+      `${c.magenta}🔐${c.reset} SMTP socket host=${endpoint.host} port=${port} secure=${secure} requireTLS=${requireTLS}`,
     );
     return createTransport({
-      host,
+      host: endpoint.host,
+      ...(endpoint.servername ? { servername: endpoint.servername } : {}),
       port,
       secure,
       requireTLS,
+      tls,
       authMethod: 'LOGIN',
       auth: {
         type: 'LOGIN',
         user: auth.user,
         pass: auth.pass,
       } as never,
-      connectionTimeout: 12_000,
-      greetingTimeout: 12_000,
-      socketTimeout: 20_000,
-      name: host,
+      connectionTimeout: 15_000,
+      greetingTimeout: 25_000,
+      socketTimeout: 30_000,
     });
   }
 
   private resolvePorts(): number[] {
     const primaryPort = Number(this.config.get<string>('STALWART_SMTP_PORT') ?? 587);
-    const fallbackPorts = this.parsePortList(
-      this.config.get<string>('STALWART_SMTP_FALLBACK_PORTS'),
-    );
-    // Compatibilidade: se a porta principal estiver fechada (ECONNREFUSED), tentamos
-    // portas comuns de submission sem depender de configuração manual.
+    const fallbackPorts = this.parsePortList(this.config.get<string>('STALWART_SMTP_FALLBACK_PORTS'));
     const autoFallbackEnabledRaw = this.config
       .get<string>('STALWART_SMTP_AUTO_FALLBACK')
       ?.trim()
@@ -135,9 +155,10 @@ export class SmtpService {
     auth: { user: string; pass: string },
     env: SmtpEnvelope,
     port: number,
+    endpoint: SmtpConnectEndpoint,
   ) {
     const run = async (secureOverride?: boolean) => {
-      const transporter = this.buildTransporter(auth, port, { secureOverride });
+      const transporter = this.buildTransporter(auth, port, { secureOverride, endpoint });
       try {
         const info = await transporter.sendMail({
           from: env.from,
@@ -187,6 +208,7 @@ export class SmtpService {
     this.log.log(
       `${c.cyan}✉️${c.reset}  SMTP send from=${env.from} to=${env.to.join(',')} subject=${env.subject.slice(0, 60)}`,
     );
+    const endpoint = await this.resolveEndpoint();
     const ports = this.resolvePorts();
     this.log.log(`${c.cyan}🧭${c.reset} tentativas SMTP nas portas: ${ports.join(', ')}`);
 
@@ -195,7 +217,7 @@ export class SmtpService {
     for (const port of ports) {
       try {
         this.log.log(`${c.cyan}🔌${c.reset} tentando SMTP ${auth.user} via porta ${port}`);
-        return await this.trySendOnPort(auth, env, port);
+        return await this.trySendOnPort(auth, env, port, endpoint);
       } catch (error) {
         lastError = error;
         const message = error instanceof Error ? error.message : String(error);
@@ -215,9 +237,10 @@ export class SmtpService {
   }
 
   async verify(auth: { user: string; pass: string }) {
+    const endpoint = await this.resolveEndpoint();
     const ports = this.resolvePorts();
     for (const port of ports) {
-      const transporter = this.buildTransporter(auth, port);
+      const transporter = this.buildTransporter(auth, port, { endpoint });
       try {
         await transporter.verify();
         this.log.log(`${c.green}✅${c.reset} SMTP verificado para ${auth.user} na porta ${port}`);

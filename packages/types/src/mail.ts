@@ -20,6 +20,13 @@ export interface MailboxSummary {
   hasCredential: boolean;
 }
 
+/** User-saved label names for inbox filtering (HubMail DB, not JMAP). */
+export interface MailboxSavedLabel {
+  id: string;
+  name: string;
+  createdAt: string | Date;
+}
+
 export interface MailFolderSummary {
   id: string;
   name: string;
@@ -32,6 +39,8 @@ export interface MailFolderSummary {
 
 export interface ThreadSummary {
   id: string;
+  /** Email JMAP usado para PATCH (ex.: marcar lido ao abrir a linha da thread colapsada). */
+  anchorEmailId?: string;
   subject: string;
   from: MailAddress;
   preview: string;
@@ -100,6 +109,23 @@ export interface SendMailResult {
   id: string;
   status: OutgoingMessageStatus;
   createdAt: string | Date;
+}
+
+export interface SaveComposeDraftInput {
+  mailboxId: string;
+  /** Id JMAP do último rascunho guardado nesta sessão (rotação create+destroy). */
+  replaceEmailId?: string;
+  to?: string[];
+  cc?: string[];
+  subject?: string;
+  text: string;
+  inReplyTo?: string;
+  references?: string[];
+}
+
+export interface SaveComposeDraftResult {
+  emailId: string;
+  threadId: string;
 }
 
 export interface PatchMessageInput {

@@ -552,15 +552,118 @@ export class JmapClient {
       notUpdated?: Record<string, { type: string; description?: string }>;
       notDestroyed?: Record<string, { type: string; description?: string }>;
     };
-    const failed =
-      (result?.notUpdated && result.notUpdated[emailId]) ||
-      (result?.notDestroyed && result.notDestroyed[emailId]);
+    const failedUpdate = result?.notUpdated?.[emailId];
+    const failedDestroy = result?.notDestroyed?.[emailId];
+    const failed = failedUpdate || failedDestroy;
     if (failed) {
+      /** Rascunho já removido por Email/set rotate / corrida com auto-save — apagar de novo é no-op. */
+      if (patch.destroy && failed.type === 'notFound') {
+        this.log.debug(
+          `${c.cyan}🗑️${c.reset} Email/set destroy: ${emailId} já inexistente (notFound), a ignorar`,
+        );
+        return { ok: true };
+      }
       throw new BadGatewayException(`JMAP Email/set falhou: ${failed.type}`);
     }
     this.log.debug(
       `${c.cyan}✍️${c.reset}  email ${emailId} atualizado (destroy=${Boolean(patch.destroy)})`,
     );
     return { ok: true };
+  }
+
+  /**
+   * Guarda rascunho na pasta Drafts (JMAP): cria Email com $draft e, se houver
+   * replaceEmailId, destrói o anterior no mesmo Email/set (RFC 8621 §4.6).
+   */
+  async upsertComposeDraft(
+    creds: JmapCredentials,
+    args: {
+      draftsMailboxId: string;
+      fromEmail: string;
+      fromName?: string | null;
+      to: Array<{ email: string; name?: string | null }>;
+      cc: Array<{ email: string; name?: string | null }>;
+      subject?: string | null;
+      bodyText: string;
+      inReplyTo?: string | null;
+      references?: string[] | null;
+      replaceEmailId?: string | null;
+    },
+  ): Promise<{ id: string; threadId: string }> {
+    const COMPOSE_DRAFT_CREATE_ID = 'hubdraft';
+    const session = await this.getSession(creds);
+    const accountId = this.primaryAccountId(session);
+
+    const from: Array<{ email: string; name?: string | null }> = [
+      args.fromName?.trim()
+        ? { email: args.fromEmail, name: args.fromName.trim() }
+        : { email: args.fromEmail },
+    ];
+
+    const createDoc: Record<string, unknown> = {
+      mailboxIds: { [args.draftsMailboxId]: true },
+      keywords: { $draft: true, $seen: true },
+      from,
+      bodyStructure: {
+        type: 'text/plain',
+        partId: 'txt',
+      },
+      bodyValues: {
+        txt: {
+          value: args.bodyText.length ? args.bodyText : ' ',
+          isTruncated: false,
+        },
+      },
+    };
+
+    const subj = args.subject?.trim();
+    if (subj) createDoc.subject = subj;
+    if (args.to.length) createDoc.to = args.to;
+    if (args.cc.length) createDoc.cc = args.cc;
+    const irt = args.inReplyTo?.trim();
+    if (irt) createDoc.inReplyTo = [irt];
+    const refs = (args.references ?? []).map((r) => r.trim()).filter(Boolean);
+    if (refs.length) createDoc.references = refs;
+
+    const calls: JmapInvocation[] = [
+      [
+        'Email/set',
+        {
+          accountId,
+          create: { [COMPOSE_DRAFT_CREATE_ID]: createDoc },
+          destroy: args.replaceEmailId ? [args.replaceEmailId] : undefined,
+        },
+        '0',
+      ],
+    ];
+    const responses = await this.invoke(session, creds, calls);
+    const result = responses[0]?.[1] as {
+      created?: Record<string, { id?: string; threadId?: string }>;
+      notCreated?: Record<string, { type?: string; description?: string }>;
+      notDestroyed?: Record<string, { type?: string; description?: string }>;
+    };
+    const created = result?.created?.[COMPOSE_DRAFT_CREATE_ID];
+    const notCreated = result?.notCreated?.[COMPOSE_DRAFT_CREATE_ID];
+    if (notCreated) {
+      const detail = notCreated.description ?? notCreated.type ?? 'unknown';
+      this.log.error(
+        `${c.red}📝${c.reset} Email/set rascunho falhou: ${c.yellow}${notCreated.type}${c.reset} — ${detail}`,
+      );
+      throw new BadGatewayException(`JMAP rascunho: ${notCreated.type}`);
+    }
+    if (args.replaceEmailId && result?.notDestroyed?.[args.replaceEmailId]) {
+      const nd = result.notDestroyed[args.replaceEmailId];
+      this.log.warn(
+        `${c.yellow}🗑️${c.reset} não destruído rascunho antigo ${args.replaceEmailId}: ${nd?.type ?? ''}`,
+      );
+    }
+    const id = created?.id;
+    const threadId = created?.threadId;
+    if (!id || !threadId) {
+      this.log.error(`${c.red}📝${c.reset} Email/set sem id/threadId na resposta de rascunho`);
+      throw new BadGatewayException('JMAP rascunho: resposta incompleta');
+    }
+    this.log.debug(`${c.green}📝${c.reset} rascunho JMAP ${c.cyan}${id}${c.reset} (thread ${threadId})`);
+    return { id, threadId };
   }
 }
