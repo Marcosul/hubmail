@@ -60,7 +60,7 @@ export class DomainsService {
     );
   }
 
-  /** SPF/DKIM/DMARC sugeridos quando a zona Stalwart não traz tudo (ou sem credenciais de gestão). */
+  /** SPF/DKIM/DMARC sugeridos quando a zona do servidor não traz tudo (ou sem credenciais de gestão). */
   private appendMailAuthHintsIfMissing(rows: DnsSetupRow[], domainName: string, mxHost: string) {
     const mx = mxHost.replace(/\.$/, '');
     const hasSpf = rows.some((r) => r.type === 'TXT' && r.value.toLowerCase().includes('v=spf1'));
@@ -87,10 +87,10 @@ export class DomainsService {
       rows.push({
         id: 'hint-dkim',
         label:
-          'DKIM — assinatura do domínio (obrigatório na prática para Gmail; o valor vem do Stalwart)',
+          'DKIM — assinatura do domínio (obrigatório na prática para Gmail; o valor vem do painel do servidor)',
         type: 'TXT',
         host: 'default._domainkey',
-        value: `[Stalwart] Webadmin › Management › Domains › ${domainName} — copie o registo TXT DKIM completo (v=DKIM1; k=rsa; p=...). O nome do host pode ser outro (ex.: rs1._domainkey); use o indicado na zona/DNS do Stalwart, não este exemplo se diferir.`,
+        value: `No painel de administração do servidor › Domínios › ${domainName} — copie o registo TXT DKIM completo (v=DKIM1; k=rsa; p=...). O nome do host pode ser outro (ex.: rs1._domainkey); use o indicado na zona/DNS exportada, não este exemplo se diferir.`,
         source: 'hint',
       });
     }
@@ -599,7 +599,7 @@ export class DomainsService {
       stalwartZoneFile: stalwartZoneRaw || null,
       stalwartError: stalwartDetail,
       records: orderedEssentials,
-      docsUrl: 'https://stalw.art/docs/domains/overview',
+      docsUrl: 'https://hubmail.to',
     };
   }
 

@@ -16,6 +16,7 @@ import type {
   SendMailInput,
   SendMailResult,
   ThreadPage,
+  ThreadSummary,
 } from "@hubmail/types";
 
 type FolderListResult = MailFolderSummary[];
@@ -43,16 +44,16 @@ export function useMailFolders(mailboxId: string | undefined) {
     queryFn: () =>
       apiRequest<FolderListResult>(`/api/mail/mailboxes${buildQuery({ mailboxId: mailboxId! })}`),
     enabled: Boolean(mailboxId),
-    staleTime: 60_000,
+    staleTime: 30_000,
   });
 }
 
 export function useThreads(
   mailboxId: string | undefined,
-  options: { folderId?: string; cursor?: number; limit?: number } = {},
+  options: { folderId?: string; cursor?: number; limit?: number; search?: string } = {},
 ) {
   return useQuery<ThreadPage>({
-    queryKey: ["mail-threads", mailboxId, options.folderId, options.cursor, options.limit],
+    queryKey: ["mail-threads", mailboxId, options.folderId, options.cursor, options.limit, options.search],
     queryFn: () =>
       apiRequest<ThreadPage>(
         `/api/mail/threads${buildQuery({
@@ -60,10 +61,15 @@ export function useThreads(
           folderId: options.folderId,
           cursor: options.cursor,
           limit: options.limit,
+          q: options.search,
         })}`,
       ),
     enabled: Boolean(mailboxId),
+    // SSE invalida o cache em tempo real; polling a 30s é fallback para ambientes
+    // sem Redis ou serverless.
     refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+    staleTime: 10_000,
   });
 }
 
@@ -75,6 +81,7 @@ export function useThread(mailboxId: string | undefined, threadId: string | unde
         `/api/mail/threads/${encodeURIComponent(threadId!)}${buildQuery({ mailboxId: mailboxId! })}`,
       ),
     enabled: Boolean(mailboxId) && Boolean(threadId),
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -91,11 +98,14 @@ export function useMessage(mailboxId: string | undefined, emailId: string | unde
   });
 }
 
-export function usePatchMessage(): UseMutationResult<
-  { ok: boolean },
-  Error,
-  { emailId: string; mailboxId: string; patch: Omit<PatchMessageInput, "moveToMailbox"> & { moveToMailbox?: string } }
-> {
+type PatchArgs = {
+  emailId: string;
+  mailboxId: string;
+  threadId?: string;
+  patch: Omit<PatchMessageInput, "moveToMailbox"> & { moveToMailbox?: string };
+};
+
+export function usePatchMessage(): UseMutationResult<{ ok: boolean }, Error, PatchArgs> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ emailId, mailboxId, patch }) =>
@@ -103,6 +113,49 @@ export function usePatchMessage(): UseMutationResult<
         method: "PATCH",
         body: { ...patch, mailboxId },
       }),
+
+    onMutate: async ({ mailboxId, threadId, patch }) => {
+      if (!threadId) return;
+
+      // Cancela refetch em andamento para não sobrescrever o optimistic update
+      await qc.cancelQueries({ queryKey: ["mail-threads", mailboxId] });
+
+      const prevThreadsQueries = qc.getQueriesData<ThreadPage>({
+        queryKey: ["mail-threads", mailboxId],
+      });
+
+      qc.setQueriesData<ThreadPage>(
+        { queryKey: ["mail-threads", mailboxId] },
+        (old) => {
+          if (!old) return old;
+          if (patch.delete) {
+            return { ...old, threads: old.threads.filter((t) => t.id !== threadId) };
+          }
+          return {
+            ...old,
+            threads: old.threads.map((t): ThreadSummary => {
+              if (t.id !== threadId) return t;
+              return {
+                ...t,
+                starred: patch.starred !== undefined ? patch.starred : t.starred,
+                unread: patch.unread !== undefined ? patch.unread : t.unread,
+              };
+            }),
+          };
+        },
+      );
+
+      return { prevThreadsQueries };
+    },
+
+    onError: (_err, _vars, ctx) => {
+      // Rollback em caso de erro
+      if (!ctx?.prevThreadsQueries) return;
+      for (const [key, data] of ctx.prevThreadsQueries) {
+        qc.setQueryData(key, data);
+      }
+    },
+
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ["mail-threads", vars.mailboxId] });
       qc.invalidateQueries({ queryKey: ["mail-thread", vars.mailboxId] });
@@ -117,6 +170,7 @@ export function useSendMail(): UseMutationResult<SendMailResult, Error, SendMail
     mutationFn: (input) =>
       apiRequest<SendMailResult>("/api/mail/send", { method: "POST", body: input }),
     onSuccess: (_, vars) => {
+      // SSE notifica o backend; aqui invalidamos preventivamente caso SSE falhe
       qc.invalidateQueries({ queryKey: ["mail-threads", vars.mailboxId] });
     },
   });

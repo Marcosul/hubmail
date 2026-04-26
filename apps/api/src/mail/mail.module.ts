@@ -6,6 +6,7 @@ import { HtmlSanitizerService } from './html-sanitizer.service';
 import { JmapClient } from './jmap.client';
 import { MailController } from './mail.controller';
 import { MailService } from './mail.service';
+import { MailStreamService } from './mail-stream.service';
 import { MailboxesController } from './mailboxes.controller';
 import { MailboxesService } from './mailboxes.service';
 import { SmtpService } from './smtp.service';
@@ -20,7 +21,8 @@ import { SmtpService } from './smtp.service';
     SmtpService,
     MailboxesService,
     MailService,
+    MailStreamService,
   ],
-  exports: [MailService, MailboxesService, CryptoService, SmtpService, JmapClient],
+  exports: [MailService, MailboxesService, CryptoService, SmtpService, JmapClient, MailStreamService],
 })
 export class MailModule {}

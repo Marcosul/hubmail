@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { ThemeProvider } from "@/components/theme-provider";
 import { LocaleProvider } from "@/i18n/client";
 import { getServerLocale } from "@/i18n/server";
@@ -39,7 +40,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className={`${geistSans.className} min-h-screen font-sans antialiased`}>
         <LocaleProvider initialLocale={locale}>
           <ThemeProvider>
-            <HubmailQueryProvider>{children}</HubmailQueryProvider>
+            <HubmailQueryProvider>
+              <NuqsAdapter>{children}</NuqsAdapter>
+            </HubmailQueryProvider>
           </ThemeProvider>
         </LocaleProvider>
       </body>

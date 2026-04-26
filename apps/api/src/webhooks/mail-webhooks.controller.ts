@@ -16,6 +16,7 @@ import { InboxEventType } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueueService } from '../queue/queue.service';
+import { MailStreamService } from '../mail/mail-stream.service';
 import { WebhookSignatureService } from './webhook-signature.service';
 
 const c = {
@@ -87,6 +88,7 @@ export class MailWebhooksController {
     private readonly queue: QueueService,
     private readonly signatures: WebhookSignatureService,
     private readonly config: ConfigService,
+    private readonly mailStream: MailStreamService,
   ) {}
 
   @Post('ingest/:domain')
@@ -191,6 +193,13 @@ export class MailWebhooksController {
           eventId: created.id,
           workspaceId: domainEntity.workspaceId,
         });
+        if (mailboxId) {
+          void this.mailStream.publish({
+            type: 'mail.received',
+            workspaceId: domainEntity.workspaceId,
+            mailboxId,
+          });
+        }
         accepted += 1;
         this.log.log(
           `${c.green}📥 Evento ${type} (${evt.typeId ?? 'raw'}) aceite ${created.id} @ ${domain}${c.reset}`,

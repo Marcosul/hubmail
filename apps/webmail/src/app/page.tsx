@@ -49,8 +49,8 @@ const features = [
   },
   {
     icon: Terminal,
-    title: "Self-hosted com Stalwart",
-    body: "Roda sobre Stalwart Mail Server. Você controla seus dados, sua infraestrutura, suas políticas.",
+    title: "Self-hosted",
+    body: "Roda no seu próprio servidor de correio. Você controla seus dados, sua infraestrutura, suas políticas.",
   },
 ] as const;
 
@@ -77,7 +77,7 @@ export default function HomePage() {
           <nav className="hidden items-center gap-6 text-sm text-neutral-400 sm:flex">
             <Link href="#features" className="hover:text-white transition-colors">Funcionalidades</Link>
             <Link href="#pricing" className="hover:text-white transition-colors">Preços</Link>
-            <a href="https://stalw.art/docs" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Docs</a>
+            <a href="https://hubmail.to" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Docs</a>
           </nav>
 
           <div className="flex items-center gap-2">
@@ -108,7 +108,7 @@ export default function HomePage() {
           <div className="relative mx-auto max-w-4xl text-center">
             <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium text-neutral-300">
               <span className="size-1.5 rounded-full bg-emerald-400" />
-              Self-hosted · Open source · Stalwart-powered
+              Self-hosted · Open source · Pronto para produção
             </div>
 
             <h1 className="text-4xl font-bold leading-tight tracking-tight sm:text-6xl lg:text-7xl">
@@ -119,7 +119,7 @@ export default function HomePage() {
             </h1>
 
             <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-neutral-400 sm:text-lg">
-              Inboxes programáticas, webhooks em tempo real e domínios personalizados — tudo conectado ao seu servidor Stalwart, com API REST completa e suporte a AI SDK.
+              Inboxes programáticas, webhooks em tempo real e domínios personalizados — ligados ao seu servidor de correio, com API REST completa e suporte a AI SDK.
             </p>
 
             <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
@@ -131,7 +131,7 @@ export default function HomePage() {
                 <ArrowRight className="size-4" aria-hidden />
               </Link>
               <a
-                href="https://stalw.art/docs"
+                href="https://hubmail.to"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex w-full items-center justify-center rounded-lg border border-white/10 bg-white/5 px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-white/10 sm:w-auto"
@@ -182,7 +182,7 @@ export default function HomePage() {
                   Infraestrutura de email pronta para produção
                 </h2>
                 <p className="text-neutral-400">
-                  Construído sobre protocolos abertos (JMAP, SMTP, IMAP) com Stalwart Mail Server. Você tem controle total dos dados e da infraestrutura.
+                  Construído sobre protocolos abertos (JMAP, SMTP, IMAP) no seu servidor de correio. Você tem controle total dos dados e da infraestrutura.
                 </p>
                 <div className="grid grid-cols-2 gap-4">
                   {stats.map(({ label, value }) => (
@@ -197,7 +197,7 @@ export default function HomePage() {
                 </div>
                 <div className="flex flex-col gap-2">
                   {[
-                    "Integração JMAP nativa com Stalwart",
+                    "Integração JMAP nativa com o servidor de correio",
                     "Assinatura HMAC em todos os webhooks",
                     "Credenciais criptografadas AES-256-GCM",
                   ].map((item) => (
@@ -312,7 +312,7 @@ export default function HomePage() {
               Pronto para começar?
             </h2>
             <p className="mt-4 text-neutral-400">
-              Conecte seu servidor Stalwart em minutos. Sem cartão de crédito.
+              Conecte seu servidor de correio em minutos. Sem cartão de crédito.
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link
@@ -339,8 +339,8 @@ export default function HomePage() {
           <nav className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-neutral-500">
             <Link href="/terms" className="hover:text-neutral-300 transition-colors">Termos</Link>
             <Link href="/privacy" className="hover:text-neutral-300 transition-colors">Privacidade</Link>
-            <a href="https://stalw.art/docs" target="_blank" rel="noopener noreferrer" className="hover:text-neutral-300 transition-colors">Docs</a>
-            <a href="https://github.com/stalwartlabs" target="_blank" rel="noopener noreferrer" className="hover:text-neutral-300 transition-colors">GitHub</a>
+            <a href="https://hubmail.to" target="_blank" rel="noopener noreferrer" className="hover:text-neutral-300 transition-colors">Docs</a>
+            <a href="https://hubmail.to" target="_blank" rel="noopener noreferrer" className="hover:text-neutral-300 transition-colors">GitHub</a>
           </nav>
         </div>
       </footer>

@@ -17,6 +17,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { HtmlSanitizerService } from './html-sanitizer.service';
 import { JmapClient } from './jmap.client';
 import { MailboxesService } from './mailboxes.service';
+import { MailStreamService } from './mail-stream.service';
 import { SmtpService } from './smtp.service';
 import type { JmapEmail } from './jmap.types';
 import type { SendMailDto } from './dto/send-mail.dto';
@@ -55,6 +56,7 @@ export class MailService {
     private readonly jmap: JmapClient,
     private readonly smtp: SmtpService,
     private readonly sanitizer: HtmlSanitizerService,
+    private readonly stream: MailStreamService,
   ) {}
 
   private isJmapAuthError(error: unknown): boolean {
@@ -380,6 +382,7 @@ export class MailService {
         to: dto.to,
         subject: dto.subject,
       }, actor);
+      void this.stream.publish({ type: 'mail.sent', workspaceId, mailboxId: mailbox.id });
       this.log.log(
         `${c.green}📮${c.reset} ${c.magenta}${mailbox.address}${c.reset} → ${dto.to.join(',')} (${record.id})`,
       );

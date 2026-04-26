@@ -4,12 +4,10 @@ import { isInboxFolderSlug } from "@/lib/inbox-routes";
 
 type PageProps = {
   params: Promise<{ inboxId: string; folder: string }>;
-  searchParams?: Promise<{ threadId?: string }>;
 };
 
-export default async function InboxFolderPage({ params, searchParams }: PageProps) {
+export default async function InboxFolderPage({ params }: PageProps) {
   const { inboxId, folder: folderParam } = await params;
-  const query = searchParams ? await searchParams : undefined;
 
   if (!inboxId?.trim()) {
     redirect("/dashboard/inboxes");
@@ -20,5 +18,5 @@ export default async function InboxFolderPage({ params, searchParams }: PageProp
     notFound();
   }
 
-  return <InboxMailView inboxId={inboxId} folderSlug={folder} threadId={query?.threadId} />;
+  return <InboxMailView inboxId={inboxId} folderSlug={folder} />;
 }

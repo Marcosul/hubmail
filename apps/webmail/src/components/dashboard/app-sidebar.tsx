@@ -231,7 +231,7 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
           Upgrade
         </Link>
         <a
-          href="https://discord.gg/stalwart"
+          href="https://hubmail.to"
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-200/60 dark:text-neutral-400 dark:hover:bg-white/5"
@@ -240,7 +240,7 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
           Discord
         </a>
         <a
-          href="https://stalw.art/docs"
+          href="https://hubmail.to"
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-200/60 dark:text-neutral-400 dark:hover:bg-white/5"
@@ -249,7 +249,7 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
           {messages.common.documentation}
         </a>
         <a
-          href="https://github.com/stalwartlabs"
+          href="https://hubmail.to"
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-200/60 dark:text-neutral-400 dark:hover:bg-white/5"

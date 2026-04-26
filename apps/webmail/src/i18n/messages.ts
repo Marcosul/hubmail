@@ -30,11 +30,11 @@ export const messages = {
       signIn: "Entrar",
       openConsole: "Abrir console",
       eyebrow: "Email self-hosted",
-      title: "Plano de controle e webmail para seu deploy Stalwart.",
+      title: "Plano de controle e webmail para o seu servidor de email.",
       description:
         "Dashboard inspirado em plataformas modernas de email: inboxes, domínios, webhooks e métricas, com um caminho limpo para conectar sua API Nest e contas com Supabase.",
       getStarted: "Começar",
-      docs: "Docs do Stalwart",
+      docs: "Documentação",
       footer: "HubMail · Construído sobre protocolos abertos",
       terms: "Termos de Uso",
       privacy: "Privacidade",
@@ -153,7 +153,7 @@ export const messages = {
       noMailboxSubtitle: "Associe uma mailbox para ver mensagens",
       labels: "Labels",
       noFolders: "Sem pastas disponíveis",
-      sync: "A sincronizar com Stalwart…",
+      sync: "A sincronizar…",
       noMessagesInFolder: "Sem mensagens nesta pasta",
       threads: "threads",
       apiKeys: "Chaves de API",
@@ -180,6 +180,7 @@ export const messages = {
       passwordMinSize: "A senha deve ter pelo menos 6 caracteres.",
       deleteMailboxConfirm: "Tem certeza que deseja excluir a inbox {address}?",
       deleteMailboxError: "Falha ao excluir inbox",
+      switchMailbox: "Trocar de caixa de email",
     },
     createInbox: {
       title: "Criar inbox",
@@ -273,13 +274,13 @@ export const messages = {
         aliasesLabel: "Aliases (opcional)",
         aliasesPlaceholder: "outro.com, mais.com",
         aliasesHelp:
-          "Nomes extra tratados como o mesmo domínio no Stalwart (ver Management › Domains na doc).",
+          "Nomes extra tratados como o mesmo domínio no servidor de correio (consulte a documentação de domínios).",
         next: "Continuar",
         back: "Voltar",
         validate: "Validar registros",
         finish: "Concluir",
         step2Description:
-          "Sugestão para envios transacionais; a conta real cria-se no Stalwart e associa-se no HubMail como mailbox.",
+          "Sugestão para envios transacionais; a conta real cria-se no servidor de correio e associa-se no HubMail como mailbox.",
         suggestedSender: "Remetente sugerido",
         dnsIntro:
           "Abra o gerenciador DNS do seu domínio e copie e cole os registros abaixo.",
@@ -288,8 +289,8 @@ export const messages = {
           "Após a propagação, clique em «Validar registros».",
         ],
         stalwartMgmtOff:
-          "Sem STALWART_MANAGEMENT_EMAIL/PASSWORD na API, o HubMail não lê o dnsZoneFile automaticamente — crie o domínio no painel Stalwart e copie os registos de lá.",
-        zoneRaw: "Ficheiro de zona (Stalwart)",
+          "Sem credenciais de gestão de domínio configuradas na API, o HubMail não lê o dnsZoneFile automaticamente — crie o domínio no painel de administração do servidor e copie os registos de lá.",
+        zoneRaw: "Ficheiro de zona sugerido",
         copy: "Copiar",
         copied: "Copiado",
         colStatus: "Status",
@@ -300,18 +301,18 @@ export const messages = {
         verificationPending:
           "Ainda não detetámos o TXT em _hubmail. Confirme o valor e aguarde a propagação.",
         verificationOk: "Domínio verificado no HubMail.",
-        openDocs: "Stalwart — Domains (overview)",
+        openDocs: "Documentação — domínios (visão geral)",
         addWizardCta: "Assistente",
         configureCta: "Configurar",
         summaryLine:
           "Quando o registo TXT de verificação estiver público, o HubMail marca o domínio como verificado.",
         summaryPending:
           "Concluiu o assistente sem validar ainda. Pode validar mais tarde pelo ícone de atualizar na lista.",
-        stalwartPartial: "Stalwart não sincronizou automaticamente",
+        stalwartPartial: "O servidor não sincronizou o domínio automaticamente",
         stalwartProvisionNote:
-          "O domínio foi guardado no HubMail. Para aparecer em Stalwart › Directory › Domains, defina na API STALWART_MANAGEMENT_EMAIL e STALWART_MANAGEMENT_PASSWORD (conta admin com permissões de gestão de domínios). Sem isso, crie o domínio manualmente no /admin do Stalwart.",
+          "O domínio foi guardado no HubMail. Para aparecer no diretório de domínios do servidor, configure na API as credenciais de gestão de domínio (conta admin JMAP com permissões de gestão de domínios). Sem isso, crie o domínio manualmente no painel de administração.",
         stalwartQueuedNote:
-          "O domínio foi guardado no HubMail e a sincronização com o Stalwart foi agendada (fila). Em alguns segundos deve aparecer no /admin do Stalwart — exige REDIS_URL e o processo workers com WORKERS_ENABLED=true.",
+          "O domínio foi guardado no HubMail e a sincronização com o servidor foi agendada (fila). Em alguns segundos deve aparecer no painel de administração — exige REDIS_URL e o processo workers com WORKERS_ENABLED=true.",
       },
     },
     apiKeys: {
@@ -454,11 +455,11 @@ export const messages = {
       signIn: "Sign in",
       openConsole: "Open console",
       eyebrow: "Self-hosted mail",
-      title: "Control plane and webmail for your Stalwart deployment.",
+      title: "Control plane and webmail for your mail server.",
       description:
         "Dashboard inspired by modern mail platforms: inboxes, domains, webhooks, metrics, with a clean path to connect your Nest API and Supabase-backed accounts.",
       getStarted: "Get started",
-      docs: "Stalwart docs",
+      docs: "Documentation",
       footer: "HubMail · Built on open protocols",
       terms: "Terms of Use",
       privacy: "Privacy",
@@ -577,7 +578,7 @@ export const messages = {
       noMailboxSubtitle: "Add a mailbox to view messages",
       labels: "Labels",
       noFolders: "No folders available",
-      sync: "Syncing with Stalwart…",
+      sync: "Syncing…",
       noMessagesInFolder: "No messages in this folder",
       threads: "threads",
       apiKeys: "API keys",
@@ -604,6 +605,7 @@ export const messages = {
       passwordMinSize: "Password must be at least 6 characters.",
       deleteMailboxConfirm: "Are you sure you want to delete inbox {address}?",
       deleteMailboxError: "Could not delete inbox",
+      switchMailbox: "Switch mailbox",
     },
     createInbox: {
       title: "Create inbox",
@@ -696,13 +698,14 @@ export const messages = {
         requiredDomain: "Enter a valid domain.",
         aliasesLabel: "Aliases (optional)",
         aliasesPlaceholder: "other.com, another.com",
-        aliasesHelp: "Extra names treated as the same domain in Stalwart (see Management › Domains).",
+        aliasesHelp:
+          "Extra names treated as the same domain on the mail server (see your domains documentation).",
         next: "Continue",
         back: "Back",
         validate: "Validate records",
         finish: "Done",
         step2Description:
-          "Suggested transactional sender; create the real account in Stalwart and link it as a mailbox in HubMail.",
+          "Suggested transactional sender; create the real account on the mail server and link it as a mailbox in HubMail.",
         suggestedSender: "Suggested sender",
         dnsIntro:
           "Open your domain DNS manager and copy/paste the records below.",
@@ -711,8 +714,8 @@ export const messages = {
           "After propagation, click “Validate records”.",
         ],
         stalwartMgmtOff:
-          "Without STALWART_MANAGEMENT_EMAIL/PASSWORD on the API, HubMail cannot read dnsZoneFile automatically — create the domain in Stalwart and copy DNS from there.",
-        zoneRaw: "Zone file (Stalwart)",
+          "Without domain management credentials configured on the API, HubMail cannot read dnsZoneFile automatically — create the domain in your server admin panel and copy DNS from there.",
+        zoneRaw: "Suggested zone file",
         copy: "Copy",
         copied: "Copied",
         colStatus: "Status",
@@ -723,18 +726,18 @@ export const messages = {
         verificationPending:
           "We still don’t see the TXT at _hubmail. Check the value and wait for propagation.",
         verificationOk: "Domain verified in HubMail.",
-        openDocs: "Stalwart — Domains (overview)",
+        openDocs: "Documentation — domains (overview)",
         addWizardCta: "Setup wizard",
         configureCta: "Configure",
         summaryLine:
           "Once HubMail’s verification TXT is live, the domain is marked verified.",
         summaryPending:
           "You finished the wizard without validating yet. You can validate later from the list.",
-        stalwartPartial: "Stalwart did not auto-sync",
+        stalwartPartial: "The server did not auto-sync the domain",
         stalwartProvisionNote:
-          "The domain was saved in HubMail. For it to appear in Stalwart › Directory › Domains, set STALWART_MANAGEMENT_EMAIL and STALWART_MANAGEMENT_PASSWORD on the API (admin JMAP account with domain-management permissions). Otherwise, create the domain manually in Stalwart /admin.",
+          "The domain was saved in HubMail. For it to appear in the server’s domain directory, configure domain-management credentials on the API (admin JMAP account with domain-management permissions). Otherwise, create the domain manually in the admin panel.",
         stalwartQueuedNote:
-          "The domain was saved in HubMail and Stalwart sync was queued. It should show in Stalwart /admin within seconds — requires REDIS_URL and the workers process with WORKERS_ENABLED=true.",
+          "The domain was saved in HubMail and server sync was queued. It should show in the admin panel within seconds — requires REDIS_URL and the workers process with WORKERS_ENABLED=true.",
       },
     },
     apiKeys: {
@@ -877,11 +880,11 @@ export const messages = {
       signIn: "Iniciar sesión",
       openConsole: "Abrir consola",
       eyebrow: "Email self-hosted",
-      title: "Plano de control y webmail para tu despliegue Stalwart.",
+      title: "Plano de control y webmail para tu servidor de correo.",
       description:
         "Dashboard inspirado en plataformas modernas de email: inboxes, dominios, webhooks y métricas, con un camino limpio para conectar tu API Nest y cuentas con Supabase.",
       getStarted: "Comenzar",
-      docs: "Docs de Stalwart",
+      docs: "Documentación",
       footer: "HubMail · Construido sobre protocolos abiertos",
       terms: "Términos de Uso",
       privacy: "Privacidad",
@@ -1000,7 +1003,7 @@ export const messages = {
       noMailboxSubtitle: "Asocia una mailbox para ver mensajes",
       labels: "Labels",
       noFolders: "No hay carpetas disponibles",
-      sync: "Sincronizando con Stalwart…",
+      sync: "Sincronizando…",
       noMessagesInFolder: "Sin mensajes en esta carpeta",
       threads: "threads",
       apiKeys: "Claves API",
@@ -1027,6 +1030,7 @@ export const messages = {
       passwordMinSize: "La contraseña debe tener al menos 6 caracteres.",
       deleteMailboxConfirm: "¿Seguro que deseas eliminar la inbox {address}?",
       deleteMailboxError: "No se pudo eliminar la inbox",
+      switchMailbox: "Cambiar de buzón",
     },
     createInbox: {
       title: "Crear inbox",
@@ -1120,13 +1124,13 @@ export const messages = {
         aliasesLabel: "Alias (opcional)",
         aliasesPlaceholder: "otro.com, mas.com",
         aliasesHelp:
-          "Nombres extra tratados como el mismo dominio en Stalwart (ver Management › Domains).",
+          "Nombres extra tratados como el mismo dominio en el servidor de correo (consulta la documentación de dominios).",
         next: "Continuar",
         back: "Volver",
         validate: "Validar registros",
         finish: "Finalizar",
         step2Description:
-          "Sugerencia para envíos transaccionales; la cuenta real se crea en Stalwart y se enlaza en HubMail como mailbox.",
+          "Sugerencia para envíos transaccionales; la cuenta real se crea en el servidor de correo y se enlaza en HubMail como mailbox.",
         suggestedSender: "Remitente sugerido",
         dnsIntro:
           "Abre el gestor DNS de tu dominio y copia/pega los registros de abajo.",
@@ -1135,8 +1139,8 @@ export const messages = {
           "Después de la propagación, pulsa «Validar registros».",
         ],
         stalwartMgmtOff:
-          "Sin STALWART_MANAGEMENT_EMAIL/PASSWORD en la API, HubMail no lee dnsZoneFile automáticamente — crea el dominio en Stalwart y copia el DNS allí.",
-        zoneRaw: "Zona sugerida (Stalwart)",
+          "Sin credenciales de gestión de dominio configuradas en la API, HubMail no lee dnsZoneFile automáticamente — crea el dominio en el panel de administración del servidor y copia el DNS allí.",
+        zoneRaw: "Zona sugerida",
         copy: "Copiar",
         copied: "Copiado",
         colStatus: "Estado",
@@ -1147,18 +1151,18 @@ export const messages = {
         verificationPending:
           "Aún no vemos el TXT en _hubmail. Comprueba el valor y espera la propagación.",
         verificationOk: "Dominio verificado en HubMail.",
-        openDocs: "Stalwart — Domains (overview)",
+        openDocs: "Documentación — dominios (visión general)",
         addWizardCta: "Asistente",
         configureCta: "Configurar",
         summaryLine:
           "Cuando el TXT de verificación sea público, HubMail marcará el dominio como verificado.",
         summaryPending:
           "Terminaste el asistente sin validar todavía. Puedes validar luego desde la lista.",
-        stalwartPartial: "Stalwart no sincronizó automáticamente",
+        stalwartPartial: "El servidor no sincronizó el dominio automáticamente",
         stalwartProvisionNote:
-          "El dominio se guardó en HubMail. Para que aparezca en Stalwart › Directory › Domains, define en la API STALWART_MANAGEMENT_EMAIL y STALWART_MANAGEMENT_PASSWORD (cuenta admin JMAP con permisos de gestión de dominios). Si no, créalo manualmente en el /admin de Stalwart.",
+          "El dominio se guardó en HubMail. Para que aparezca en el directorio de dominios del servidor, configura en la API las credenciales de gestión de dominio (cuenta admin JMAP con permisos de gestión de dominios). Si no, créalo manualmente en el panel de administración.",
         stalwartQueuedNote:
-          "El dominio se guardó en HubMail y la sincronización con Stalwart quedó en cola. Debería aparecer en /admin en segundos — requiere REDIS_URL y el proceso workers con WORKERS_ENABLED=true.",
+          "El dominio se guardó en HubMail y la sincronización con el servidor quedó en cola. Debería aparecer en el panel de administración en segundos — requiere REDIS_URL y el proceso workers con WORKERS_ENABLED=true.",
       },
     },
     apiKeys: {

@@ -205,7 +205,7 @@ export default function UpgradePage() {
         </h3>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {[
-            "Integração com Stalwart (JMAP/SMTP/IMAP)",
+            "Integração JMAP/SMTP/IMAP com o servidor de correio",
             "Webhooks ilimitados",
             "API REST completa",
             "Suporte a múltiplos workspaces",
