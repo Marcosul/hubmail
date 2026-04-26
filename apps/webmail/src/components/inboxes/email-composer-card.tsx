@@ -54,7 +54,9 @@ function replyHeadersForSend(draft: ComposeDraft | undefined): {
 }
 
 const DRAFT_FLUSH_BEFORE_SEND_MS = 3500;
-const SEND_SUCCESS_HOLD_MS = 3000;
+const SEND_SUCCESS_HOLD_MS = 2000;
+/** Duração da animação de fecho (deve alinhar com `duration-*` no cartão). */
+const COMPOSE_EXIT_MS = 320;
 
 type SendButtonPhase = "idle" | "sending" | "sent";
 
@@ -84,6 +86,7 @@ export function EmailComposerCard({
   const [showCc, setShowCc] = useState(Boolean(initialDraft?.cc));
   const [error, setError] = useState<string | null>(null);
   const [sendButtonPhase, setSendButtonPhase] = useState<SendButtonPhase>("idle");
+  const [isExiting, setIsExiting] = useState(false);
   const router = useRouter();
   const queryClient = useQueryClient();
   const send = useSendMail();
@@ -104,6 +107,7 @@ export function EmailComposerCard({
     setShowCc(Boolean(initialDraft?.cc));
     setError(null);
     setSendButtonPhase("idle");
+    setIsExiting(false);
     draftJmapIdRef.current = initialDraft?.jmapDraftEmailId?.trim() || null;
   }, [
     initialDraft?.to,
@@ -121,6 +125,9 @@ export function EmailComposerCard({
 
   /** Auto-grava rascunho na pasta Drafts (JMAP) com debounce; rotações create+destroy ficam serializadas. */
   useEffect(() => {
+    if (sendButtonPhase !== "idle" || isExiting) {
+      return;
+    }
     if (!mailboxId) {
       draftJmapIdRef.current = null;
       return;
@@ -176,6 +183,8 @@ export function EmailComposerCard({
     initialDraft?.inReplyTo,
     initialDraftReferencesKey,
     saveDraft,
+    sendButtonPhase,
+    isExiting,
   ]);
 
   async function handleSend() {
@@ -229,6 +238,10 @@ export function EmailComposerCard({
       await new Promise<void>((resolve) => {
         window.setTimeout(resolve, SEND_SUCCESS_HOLD_MS);
       });
+      setIsExiting(true);
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, COMPOSE_EXIT_MS);
+      });
       const sentSlug = resolveSentFolderSlug(folders);
       router.push(inboxFolderHref(mailboxId, sentSlug));
       onClose?.();
@@ -239,19 +252,24 @@ export function EmailComposerCard({
   }
 
   const sendButtonBusy = sendButtonPhase !== "idle";
+  const composeLocked = sendButtonPhase === "sending" || sendButtonPhase === "sent";
+  const chromeLocked = composeLocked || isExiting;
 
   return (
     <section
       className={cn(
-        "flex flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white dark:border-hub-border dark:bg-[#0f0f0f]",
+        "flex flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white transition-[opacity,transform,filter] duration-300 ease-out motion-reduce:transition-none dark:border-hub-border dark:bg-[#0f0f0f]",
         compact
           ? compactMaximized
             ? "min-h-0 flex-1 max-h-full"
             : "h-[min(580px,85dvh)] max-h-[90dvh] min-h-[280px]"
           : "min-h-[min(520px,75dvh)]",
+        isExiting &&
+          "pointer-events-none translate-y-2 scale-[0.97] opacity-0 blur-[0.8px] motion-reduce:translate-y-0 motion-reduce:scale-100 motion-reduce:blur-none",
         className,
       )}
       aria-label={copy.compose}
+      aria-busy={composeLocked || undefined}
       onClick={(e) => e.stopPropagation()}
     >
       <header className="flex shrink-0 items-center justify-between border-b border-neutral-200 px-3 py-2 dark:border-hub-border">
@@ -262,7 +280,8 @@ export function EmailComposerCard({
           {onMinimize ? (
             <button
               type="button"
-              className="rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-white/10"
+              disabled={chromeLocked}
+              className="rounded p-1 text-neutral-500 hover:bg-neutral-100 disabled:pointer-events-none disabled:opacity-40 dark:text-neutral-400 dark:hover:bg-white/10"
               aria-label={copy.minimize}
               onClick={onMinimize}
             >
@@ -272,7 +291,8 @@ export function EmailComposerCard({
           {onToggleMaximize ? (
             <button
               type="button"
-              className="rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-white/10"
+              disabled={chromeLocked}
+              className="rounded p-1 text-neutral-500 hover:bg-neutral-100 disabled:pointer-events-none disabled:opacity-40 dark:text-neutral-400 dark:hover:bg-white/10"
               aria-label={maximized ? copy.restoreSize : copy.maximize}
               onClick={onToggleMaximize}
             >
@@ -282,7 +302,8 @@ export function EmailComposerCard({
           {onClose ? (
             <button
               type="button"
-              className="rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-white/10"
+              disabled={chromeLocked}
+              className="rounded p-1 text-neutral-500 hover:bg-neutral-100 disabled:pointer-events-none disabled:opacity-40 dark:text-neutral-400 dark:hover:bg-white/10"
               aria-label={copy.close}
               onClick={onClose}
             >
@@ -305,14 +326,16 @@ export function EmailComposerCard({
                 autoComplete="email"
                 placeholder="nome@dominio.com"
                 value={to}
+                disabled={composeLocked}
                 onChange={(e) => setTo(e.target.value)}
-                className={inputClass}
+                className={cn(inputClass, composeLocked && "cursor-not-allowed opacity-70")}
               />
               {!showCc ? (
                 <button
                   type="button"
+                  disabled={composeLocked}
                   onClick={() => setShowCc(true)}
-                  className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-300"
+                  className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-neutral-500 hover:text-neutral-800 disabled:pointer-events-none disabled:opacity-40 dark:hover:text-neutral-300"
                 >
                   Cc
                 </button>
@@ -329,8 +352,9 @@ export function EmailComposerCard({
                 type="text"
                 placeholder="opcional"
                 value={cc}
+                disabled={composeLocked}
                 onChange={(e) => setCc(e.target.value)}
-                className={inputClass}
+                className={cn(inputClass, composeLocked && "cursor-not-allowed opacity-70")}
               />
             </div>
           ) : null}
@@ -343,8 +367,9 @@ export function EmailComposerCard({
               type="text"
               placeholder={copy.subject}
               value={subject}
+              disabled={composeLocked}
               onChange={(e) => setSubject(e.target.value)}
-              className={inputClass}
+              className={cn(inputClass, composeLocked && "cursor-not-allowed opacity-70")}
             />
           </div>
         </div>
@@ -357,10 +382,12 @@ export function EmailComposerCard({
             id={fieldId("body")}
             placeholder={copy.body}
             value={body}
+            disabled={composeLocked}
             onChange={(e) => setBody(e.target.value)}
             rows={compact ? (compactMaximized ? 16 : 8) : 12}
             className={cn(
               "min-h-0 w-full min-w-0 flex-1 resize-y rounded-md border border-neutral-200 bg-white px-2.5 py-2 text-sm leading-relaxed text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-neutral-400 focus:ring-1 focus:ring-neutral-400 dark:border-hub-border dark:bg-[#141414] dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:border-white/30 dark:focus:ring-white/20",
+              composeLocked && "cursor-not-allowed resize-none opacity-70",
               compact && !compactMaximized && "min-h-[140px]",
               compact && compactMaximized && "min-h-[min(320px,40dvh)]",
               !compact && "min-h-[200px]",
