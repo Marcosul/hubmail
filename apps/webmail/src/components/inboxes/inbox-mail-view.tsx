@@ -243,20 +243,20 @@ function MailboxBreadcrumbSwitcher({
 
 type ThreadViewerPanelProps = {
   mailboxId: string | undefined;
+  mailboxAddress: string | undefined;
+  folderIdForBadge: string | undefined;
   threadId: string;
   onDelete: (emailId: string) => Promise<void>;
-  onToggleStar: (emailId: string, starred: boolean) => Promise<void>;
-  onToggleUnread: (emailId: string, unread: boolean) => Promise<void>;
   onReply: (draft: ComposeDraft) => void;
   selectConversationLabel: string;
 };
 
 const ThreadViewerPanel = memo(function ThreadViewerPanel({
   mailboxId,
+  mailboxAddress,
+  folderIdForBadge,
   threadId,
   onDelete,
-  onToggleStar,
-  onToggleUnread,
   onReply,
   selectConversationLabel,
 }: ThreadViewerPanelProps) {
@@ -266,9 +266,9 @@ const ThreadViewerPanel = memo(function ThreadViewerPanel({
         <ThreadViewer
           mailboxId={mailboxId}
           threadId={threadId}
+          mailboxAddress={mailboxAddress}
+          folderIdForBadge={folderIdForBadge}
           onDelete={onDelete}
-          onToggleStar={onToggleStar}
-          onToggleUnread={onToggleUnread}
           onReply={onReply}
         />
       ) : (
@@ -624,33 +624,6 @@ function Content({ inboxId, folderSlug }: InboxMailViewProps) {
     [mailbox, patch, selectedThreadId, setSelectedThreadId],
   );
 
-  const handleToggleStar = useCallback(
-    async (emailId: string, starred: boolean) => {
-      if (!mailbox) return;
-      await patch.mutateAsync({
-        emailId,
-        mailboxId: mailbox.id,
-        threadId: selectedThreadId,
-        patch: { starred },
-      });
-    },
-    [mailbox, patch, selectedThreadId],
-  );
-
-  const handleToggleUnread = useCallback(
-    async (emailId: string, unread: boolean) => {
-      if (!mailbox) return;
-      await patch.mutateAsync({
-        emailId,
-        mailboxId: mailbox.id,
-        threadId: selectedThreadId,
-        folderIdForBadge: folderMatch?.id,
-        patch: { unread },
-      });
-    },
-    [mailbox, patch, selectedThreadId, folderMatch?.id],
-  );
-
   const handleThreadReply = useCallback(
     (draft: ComposeDraft) => {
       if (!mailbox) return;
@@ -726,10 +699,10 @@ function Content({ inboxId, folderSlug }: InboxMailViewProps) {
   const viewerSlot = (
     <ThreadViewerPanel
       mailboxId={mailbox?.id}
+      mailboxAddress={mailbox?.address}
+      folderIdForBadge={folderMatch?.id}
       threadId={selectedThreadId}
       onDelete={handleThreadDelete}
-      onToggleStar={handleToggleStar}
-      onToggleUnread={handleToggleUnread}
       onReply={handleThreadReply}
       selectConversationLabel={copy.selectConversation}
     />

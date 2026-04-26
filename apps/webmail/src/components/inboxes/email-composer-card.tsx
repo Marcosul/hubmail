@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Maximize2, Paperclip, Send, Shrink, X } from "lucide-react";
-import { usePatchMessage, useSaveComposeDraft, useSendMail } from "@/hooks/use-mail";
+import { useMailFolders, useSaveComposeDraft, useSendMail } from "@/hooks/use-mail";
 import type { ComposeDraft } from "@/components/inboxes/inbox-compose-provider";
 import { useI18n } from "@/i18n/client";
+import { inboxFolderHref, resolveSentFolderSlug } from "@/lib/inbox-routes";
 import { cn } from "@/lib/utils";
 
 type EmailComposerCardProps = {
@@ -54,9 +57,11 @@ export function EmailComposerCard({
   const [body, setBody] = useState(initialDraft?.text ?? "");
   const [showCc, setShowCc] = useState(Boolean(initialDraft?.cc));
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const send = useSendMail();
   const saveDraft = useSaveComposeDraft();
-  const patchMessage = usePatchMessage();
+  const { data: folders } = useMailFolders(mailboxId);
   const draftJmapIdRef = useRef<string | null>(null);
   const draftSaveChainRef = useRef(Promise.resolve());
   const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -174,19 +179,13 @@ export function EmailComposerCard({
         text: trimmedBody,
         inReplyTo: initialDraft?.inReplyTo,
         references: initialDraft?.references,
+        draftEmailId: draftIdToRemove ?? undefined,
       });
       draftJmapIdRef.current = null;
-      if (draftIdToRemove) {
-        try {
-          await patchMessage.mutateAsync({
-            emailId: draftIdToRemove,
-            mailboxId,
-            patch: { delete: true },
-          });
-        } catch {
-          /* JMAP notFound se o auto-save já rotacionou / apagou o rascunho */
-        }
-      }
+      await queryClient.refetchQueries({ queryKey: ["mail-threads", mailboxId] });
+      await queryClient.refetchQueries({ queryKey: ["mail-folders", mailboxId] });
+      const sentSlug = resolveSentFolderSlug(folders);
+      router.push(inboxFolderHref(mailboxId, sentSlug));
       onClose?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : copy.sendError);

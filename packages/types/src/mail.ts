@@ -97,6 +97,8 @@ export interface SendMailInput {
   text?: string;
   inReplyTo?: string;
   references?: string[];
+  /** Id JMAP do rascunho a remover no servidor após envio. */
+  draftEmailId?: string;
   attachments?: Array<{
     filename: string;
     contentType: string;

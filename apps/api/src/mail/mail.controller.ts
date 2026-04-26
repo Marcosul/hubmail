@@ -6,12 +6,13 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import type { User } from '@supabase/supabase-js';
-import type { FastifyReply } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { SupabaseJwtAuthGuard } from '../auth/guards/supabase-jwt-auth.guard';
 import { CurrentWorkspace } from '../tenancy/current-workspace.decorator';
@@ -20,6 +21,7 @@ import type { WorkspaceContext } from '../tenancy/workspace-context';
 import { PatchMessageDto } from './dto/patch-message.dto';
 import { SaveComposeDraftDto } from './dto/save-compose-draft.dto';
 import { SendMailDto } from './dto/send-mail.dto';
+import { getCorsAllowList, getRequestOrigin } from '../cors-origins';
 import { MailService } from './mail.service';
 import { MailStreamService } from './mail-stream.service';
 
@@ -41,6 +43,7 @@ export class MailController {
   @ApiOperation({ summary: 'SSE: eventos em tempo real do mailbox' })
   @ApiQuery({ name: 'mailboxId', required: true })
   async streamEvents(
+    @Req() req: FastifyRequest,
     @Res() reply: FastifyReply,
     @Query('mailboxId') mailboxId: string,
     @CurrentWorkspace() ws: WorkspaceContext,
@@ -49,6 +52,15 @@ export class MailController {
     // Sem isto o Fastify tenta chamar reply.send() ao retornar o handler async.
     reply.hijack();
     const raw = reply.raw;
+
+    // `hijack()` contorna o pipeline CORS do Nest — o browser bloqueia o fetch com Authorization.
+    const origin = getRequestOrigin(req);
+    const allowList = getCorsAllowList();
+    if (origin && allowList.includes(origin)) {
+      raw.setHeader('Access-Control-Allow-Origin', origin);
+      raw.setHeader('Access-Control-Allow-Credentials', 'true');
+      raw.setHeader('Vary', 'Origin');
+    }
 
     raw.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     raw.setHeader('Cache-Control', 'no-cache, no-transform');

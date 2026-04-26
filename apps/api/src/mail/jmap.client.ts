@@ -332,6 +332,47 @@ export class JmapClient {
     return this.postJmap(session, creds, [CORE_CAP, STALWART_CAP, PRINCIPALS_CAP], calls);
   }
 
+  /**
+   * Conta emails com um filtro JMAP (ex.: rascunhos com `hasKeyword: $draft`).
+   * `limit: 0` + `calculateTotal` evita trazer ids.
+   */
+  async countEmailsMatching(creds: JmapCredentials, filter: Record<string, unknown>): Promise<number> {
+    const session = await this.getSession(creds);
+    const accountId = this.primaryAccountId(session);
+    const responses = await this.invoke(session, creds, [
+      [
+        'Email/query',
+        {
+          accountId,
+          filter,
+          limit: 0,
+          calculateTotal: true,
+        },
+        '0',
+      ],
+    ]);
+    const q = responses[0]?.[1] as { total?: number } | undefined;
+    return Number(q?.total ?? 0);
+  }
+
+  private buildEmailQueryFilter(opts: {
+    mailboxId?: string;
+    search?: string;
+    /** Só mensagens com keyword $draft (pasta Rascunhos sem itens “fantasma”). */
+    onlyKeywordDraft?: boolean;
+  }): Record<string, unknown> {
+    const inM = opts.mailboxId;
+    const text = opts.search?.trim();
+    const wantDraft = Boolean(opts.onlyKeywordDraft && inM);
+    const conditions: Record<string, unknown>[] = [];
+    if (inM) conditions.push({ inMailbox: inM });
+    if (wantDraft) conditions.push({ hasKeyword: '$draft' });
+    if (text) conditions.push({ text });
+    if (conditions.length === 0) return {};
+    if (conditions.length === 1) return conditions[0]!;
+    return { operator: 'AND', conditions };
+  }
+
   async listMailboxes(creds: JmapCredentials): Promise<JmapMailboxSummary[]> {
     const session = await this.getSession(creds);
     const accountId = this.primaryAccountId(session);
@@ -354,15 +395,23 @@ export class JmapClient {
 
   async listThreads(
     creds: JmapCredentials,
-    opts: { mailboxId?: string; cursor?: number; limit?: number; search?: string },
+    opts: {
+      mailboxId?: string;
+      cursor?: number;
+      limit?: number;
+      search?: string;
+      onlyKeywordDraft?: boolean;
+    },
   ) {
     const session = await this.getSession(creds);
     const accountId = this.primaryAccountId(session);
     const position = opts.cursor ?? 0;
     const limit = Math.min(Math.max(opts.limit ?? 30, 1), 100);
-    const filter: Record<string, unknown> = {};
-    if (opts.mailboxId) filter.inMailbox = opts.mailboxId;
-    if (opts.search) filter.text = opts.search;
+    const filter = this.buildEmailQueryFilter({
+      mailboxId: opts.mailboxId,
+      search: opts.search,
+      onlyKeywordDraft: opts.onlyKeywordDraft,
+    });
 
     const responses = await this.invoke(session, creds, [
       [

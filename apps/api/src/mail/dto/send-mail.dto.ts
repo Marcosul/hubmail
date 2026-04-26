@@ -93,4 +93,13 @@ export class SendMailDto {
   @IsOptional()
   @IsISO8601()
   scheduledAt?: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'Id JMAP do rascunho a eliminar após envio SMTP bem-sucedido',
+  })
+  @IsOptional()
+  @IsString()
+  @Length(1, 200)
+  draftEmailId?: string;
 }

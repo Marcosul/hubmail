@@ -47,6 +47,29 @@ function stripHtml(input: string): string {
   return input.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+/** JMAP usa `role: sent`; servidores podem expor só o nome ("Sent Items"). */
+function isSentMailboxFolder(folder: { role?: string | null; name: string }): boolean {
+  const role = (folder.role ?? '').toLowerCase().replace(/^\/|\/$/g, '');
+  if (role === 'sent') return true;
+  const n = folder.name.toLowerCase();
+  if (n.includes('draft')) return false;
+  if (n.includes('resent')) return false;
+  if (n.includes('enviad')) return true;
+  if (n.includes('sent items') || n.includes('sent mail')) return true;
+  return n.includes('sent');
+}
+
+/** Pasta de rascunhos (JMAP `drafts` ou nomes como "Drafts" / "Rascunhos"). */
+function isDraftsMailboxFolder(folder: { role?: string | null; name: string }): boolean {
+  const role = (folder.role ?? '').toLowerCase().replace(/^\/|\/$/g, '');
+  if (role === 'drafts' || role === 'draft') return true;
+  const n = folder.name.toLowerCase();
+  if (n.includes('rascunh')) return true;
+  if (n.includes('borrador')) return true;
+  if (n.includes('draft') && !n.includes('sent')) return true;
+  return false;
+}
+
 @Injectable()
 export class MailService {
   private readonly log = new Logger(MailService.name);
@@ -104,10 +127,10 @@ export class MailService {
     const folders = await this.withJmapGuard(workspaceId, dto.mailboxId, () =>
       this.jmap.listMailboxes(credentials),
     );
-    const draftsFolder = folders.find((f) => f.role === 'drafts');
+    const draftsFolder = folders.find((f) => isDraftsMailboxFolder(f));
     if (!draftsFolder) {
       this.log.warn(
-        `${c.yellow}📭${c.reset} mailbox ${c.magenta}${mailbox.address}${c.reset} sem pasta role=drafts`,
+        `${c.yellow}📭${c.reset} mailbox ${c.magenta}${mailbox.address}${c.reset} sem pasta de rascunhos reconhecida`,
       );
       throw new BadRequestException('Conta sem pasta de rascunhos (JMAP).');
     }
@@ -142,7 +165,7 @@ export class MailService {
     const folders = await this.withJmapGuard(workspaceId, mailboxId, () =>
       this.jmap.listMailboxes(credentials),
     );
-    return folders.map((f) => ({
+    const base: MailFolderSummary[] = folders.map((f) => ({
       id: f.id,
       name: f.name,
       role: f.role ?? undefined,
@@ -151,6 +174,27 @@ export class MailService {
       totalEmails: f.totalEmails,
       unreadEmails: f.unreadEmails,
     }));
+
+    const withDraftKeywordTotals = await Promise.all(
+      base.map(async (f) => {
+        if (!isDraftsMailboxFolder(f)) return f;
+        try {
+          const n = await this.withJmapGuard(workspaceId, mailboxId, () =>
+            this.jmap.countEmailsMatching(credentials, {
+              operator: 'AND',
+              conditions: [{ inMailbox: f.id }, { hasKeyword: '$draft' }],
+            }),
+          );
+          return { ...f, totalEmails: n };
+        } catch {
+          this.log.debug(
+            `${c.yellow}📂${c.reset} contagem JMAP $draft falhou para ${c.magenta}${f.name}${c.reset}; mantém total da pasta`,
+          );
+          return f;
+        }
+      }),
+    );
+    return withDraftKeywordTotals;
   }
 
   async listThreads(
@@ -163,7 +207,8 @@ export class MailService {
       this.jmap.listMailboxes(credentials),
     );
     const selectedFolder = folders.find((f) => f.id === opts.folderId);
-    const isSentFolder = selectedFolder?.role === 'sent';
+    const isSentFolder = selectedFolder ? isSentMailboxFolder(selectedFolder) : false;
+    const isDraftsFolder = selectedFolder ? isDraftsMailboxFolder(selectedFolder) : false;
     if (isSentFolder) {
       const limit = Math.min(Math.max(opts.limit ?? 30, 1), 100);
       const position = Math.max(opts.cursor ?? 0, 0);
@@ -217,6 +262,7 @@ export class MailService {
         cursor: opts.cursor,
         limit: opts.limit,
         search: opts.search,
+        onlyKeywordDraft: isDraftsFolder,
       }),
     );
     const threads: ThreadSummary[] = emails.map((e) => {
@@ -315,6 +361,40 @@ export class MailService {
   }
 
   async patch(workspaceId: string, emailId: string, patch: PatchMessageDto) {
+    /** Enviados HubMail vêm da tabela `outgoing_messages` — não existem no JMAP. */
+    if (emailId.startsWith('outgoing-message:')) {
+      const outgoingId = emailId.slice('outgoing-message:'.length);
+      const mailbox = await this.mailboxes.getOrThrow(workspaceId, patch.mailboxId);
+      const row = await this.prisma.outgoingMessage.findFirst({
+        where: { id: outgoingId, workspaceId, mailboxId: mailbox.id },
+      });
+      if (!row) {
+        throw new NotFoundException('Mensagem não encontrada');
+      }
+      if (patch.delete || patch.moveToMailbox) {
+        await this.prisma.outgoingMessage.delete({ where: { id: row.id } });
+        await this.auditMutation(workspaceId, 'mail.outgoing.removed', row.id, {
+          subject: row.subject,
+          via: patch.delete ? 'delete' : 'move-to-mailbox',
+        });
+        this.log.log(
+          `${c.yellow}🧺${c.reset} enviado HubMail removido (${c.cyan}${row.id}${c.reset}) — ${patch.delete ? 'DELETE' : '→ lixo (só DB)'}`,
+        );
+        void this.stream.publish({ type: 'mail.updated', workspaceId, mailboxId: mailbox.id });
+        return { ok: true };
+      }
+      const hasFlagPatch =
+        typeof patch.starred === 'boolean' ||
+        typeof patch.unread === 'boolean' ||
+        Boolean(patch.labels?.length);
+      if (hasFlagPatch) {
+        throw new BadRequestException(
+          'Mensagens só registadas no HubMail (lista Enviados) não suportam marcas; pode removê-las.',
+        );
+      }
+      throw new BadRequestException('Nada para atualizar');
+    }
+
     const { credentials } = await this.mailboxes.resolveCredentials(workspaceId, patch.mailboxId);
     const keywords: Record<string, boolean> = {};
     if (typeof patch.starred === 'boolean') keywords.$flagged = patch.starred;
@@ -333,6 +413,8 @@ export class MailService {
         this.jmap.patchEmail(credentials, emailId, { destroy: true }),
       );
       await this.auditMutation(workspaceId, 'mail.message.deleted', emailId);
+      const mb = await this.mailboxes.getOrThrow(workspaceId, patch.mailboxId);
+      void this.stream.publish({ type: 'mail.updated', workspaceId, mailboxId: mb.id });
       return { ok: true };
     }
     if (!Object.keys(keywords).length && !mailboxIds) {
@@ -428,6 +510,28 @@ export class MailService {
         subject: dto.subject,
       }, actor);
       void this.stream.publish({ type: 'mail.sent', workspaceId, mailboxId: mailbox.id });
+
+      const draftId = dto.draftEmailId?.trim();
+      if (draftId) {
+        try {
+          await this.withJmapGuard(workspaceId, dto.mailboxId, () =>
+            this.jmap.patchEmail(credentials, draftId, { destroy: true }),
+          );
+          await this.auditMutation(workspaceId, 'mail.message.deleted', draftId, {
+            reason: 'compose-draft-after-send',
+          });
+          this.log.log(
+            `${c.magenta}🧹${c.reset} rascunho JMAP removido após envio: ${c.cyan}${draftId}${c.reset}`,
+          );
+          void this.stream.publish({ type: 'mail.updated', workspaceId, mailboxId: mailbox.id });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          this.log.warn(
+            `${c.yellow}⚠️${c.reset} não foi possível apagar rascunho pós-envio (${draftId}): ${msg}`,
+          );
+        }
+      }
+
       this.log.log(
         `${c.green}📮${c.reset} ${c.magenta}${mailbox.address}${c.reset} → ${dto.to.join(',')} (${record.id})`,
       );

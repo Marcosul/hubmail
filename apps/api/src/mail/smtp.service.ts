@@ -1,4 +1,10 @@
-import { BadGatewayException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createTransport, type Transporter } from 'nodemailer';
 import {
@@ -80,15 +86,12 @@ export class SmtpService {
   private getConfiguredHost(): string {
     const host = this.config.get<string>('STALWART_SMTP_HOST')?.trim();
     if (!host) {
-      throw new BadGatewayException('Defina STALWART_SMTP_HOST no .env');
+      throw new ServiceUnavailableException('Defina STALWART_SMTP_HOST no .env da API');
     }
     return host;
   }
 
-  private async resolveEndpoint(): Promise<SmtpConnectEndpoint> {
-    const logical = this.getConfiguredHost();
-    const prefer = preferIpv4FromEnv(this.config.get<string>('STALWART_SMTP_PREFER_IPV4'));
-    const endpoint = await resolveSmtpConnectEndpoint(logical, prefer);
+  private logEndpoint(logical: string, endpoint: SmtpConnectEndpoint): void {
     if (endpoint.servername) {
       this.log.log(
         `${c.cyan}🌐${c.reset} SMTP endpoint: ${c.magenta}${logical}${c.reset} → ${c.magenta}${endpoint.host}${c.reset} (SNI ${c.magenta}${endpoint.servername}${c.reset})`,
@@ -96,7 +99,47 @@ export class SmtpService {
     } else {
       this.log.log(`${c.cyan}🌐${c.reset} SMTP endpoint: ${c.magenta}${endpoint.host}${c.reset}`);
     }
-    return endpoint;
+  }
+
+  /**
+   * Percorre todas as portas; no fim lança 422 com mensagem legível (evita 502 genérico no browser).
+   */
+  private async deliverSmtpOrThrow(
+    auth: { user: string; pass: string },
+    env: SmtpEnvelope,
+    endpoint: SmtpConnectEndpoint,
+  ): Promise<{
+    messageId: string | null;
+    accepted: string[];
+    rejected: string[];
+  }> {
+    const ports = this.resolvePorts();
+    this.log.log(`${c.cyan}🧭${c.reset} tentativas SMTP nas portas: ${ports.join(', ')}`);
+
+    let lastError: unknown = null;
+    const attempts: Array<{ port: number; message: string }> = [];
+    for (const port of ports) {
+      try {
+        this.log.log(`${c.cyan}🔌${c.reset} tentando SMTP ${auth.user} via porta ${port}`);
+        return await this.trySendOnPort(auth, env, port, endpoint);
+      } catch (error) {
+        lastError = error;
+        const message = error instanceof Error ? error.message : String(error);
+        attempts.push({ port, message });
+        this.log.warn(`${c.yellow}⚠️${c.reset} falha na porta ${port}: ${message}`);
+      }
+    }
+
+    const preferred =
+      attempts.find((a) => !a.message.toLowerCase().includes('econnrefused')) ??
+      attempts[attempts.length - 1];
+    const finalMessage =
+      preferred?.message ??
+      (lastError instanceof Error ? lastError.message : String(lastError ?? 'erro desconhecido'));
+    this.log.error(`${c.red}❌ SMTP falhou em todas as portas:${c.reset} ${finalMessage}`);
+    throw new UnprocessableEntityException(
+      `SMTP falhou: ${finalMessage}. Verifica STALWART_SMTP_HOST/PORT, STALWART_SMTP_PREFER_IPV4, firewall e credenciais da mailbox.`,
+    );
   }
 
   private buildTransporter(
@@ -203,55 +246,56 @@ export class SmtpService {
 
   async send(auth: { user: string; pass: string }, env: SmtpEnvelope) {
     if (!auth.user?.trim() || !auth.pass?.trim()) {
-      throw new BadGatewayException('SMTP sem credenciais válidas (username/password).');
+      throw new BadRequestException('SMTP sem credenciais válidas (username/password).');
     }
     this.log.log(
       `${c.cyan}✉️${c.reset}  SMTP send from=${env.from} to=${env.to.join(',')} subject=${env.subject.slice(0, 60)}`,
     );
-    const endpoint = await this.resolveEndpoint();
-    const ports = this.resolvePorts();
-    this.log.log(`${c.cyan}🧭${c.reset} tentativas SMTP nas portas: ${ports.join(', ')}`);
+    const logical = this.getConfiguredHost();
+    const preferIpv4 = preferIpv4FromEnv(this.config.get<string>('STALWART_SMTP_PREFER_IPV4'));
+    const endpoint = await resolveSmtpConnectEndpoint(logical, preferIpv4);
+    this.logEndpoint(logical, endpoint);
 
-    let lastError: unknown = null;
-    const attempts: Array<{ port: number; message: string }> = [];
-    for (const port of ports) {
-      try {
-        this.log.log(`${c.cyan}🔌${c.reset} tentando SMTP ${auth.user} via porta ${port}`);
-        return await this.trySendOnPort(auth, env, port, endpoint);
-      } catch (error) {
-        lastError = error;
-        const message = error instanceof Error ? error.message : String(error);
-        attempts.push({ port, message });
-        this.log.warn(`${c.yellow}⚠️${c.reset} falha na porta ${port}: ${message}`);
+    try {
+      return await this.deliverSmtpOrThrow(auth, env, endpoint);
+    } catch (first) {
+      if (endpoint.servername && preferIpv4) {
+        this.log.warn(
+          `${c.yellow}🔄${c.reset} SMTP: novo ciclo com hostname ${c.magenta}${logical}${c.reset} (IPv4 fixo falhou)`,
+        );
+        const fallback: SmtpConnectEndpoint = { host: logical };
+        this.logEndpoint(logical, fallback);
+        return await this.deliverSmtpOrThrow(auth, env, fallback);
       }
+      throw first;
     }
-
-    const preferred =
-      attempts.find((a) => !a.message.toLowerCase().includes('econnrefused')) ??
-      attempts[attempts.length - 1];
-    const finalMessage =
-      preferred?.message ??
-      (lastError instanceof Error ? lastError.message : String(lastError ?? 'erro desconhecido'));
-    this.log.error(`${c.red}❌ SMTP falhou em todas as portas:${c.reset} ${finalMessage}`);
-    throw new BadGatewayException(`SMTP falhou: ${finalMessage}`);
   }
 
   async verify(auth: { user: string; pass: string }) {
-    const endpoint = await this.resolveEndpoint();
-    const ports = this.resolvePorts();
-    for (const port of ports) {
-      const transporter = this.buildTransporter(auth, port, { endpoint });
-      try {
-        await transporter.verify();
-        this.log.log(`${c.green}✅${c.reset} SMTP verificado para ${auth.user} na porta ${port}`);
-        return true;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.log.warn(`${c.yellow}⚠️${c.reset} verify SMTP falhou na porta ${port}: ${message}`);
-      } finally {
-        transporter.close();
+    const logical = this.getConfiguredHost();
+    const preferIpv4 = preferIpv4FromEnv(this.config.get<string>('STALWART_SMTP_PREFER_IPV4'));
+    const endpoint = await resolveSmtpConnectEndpoint(logical, preferIpv4);
+
+    const run = async (ep: SmtpConnectEndpoint): Promise<boolean> => {
+      const ports = this.resolvePorts();
+      for (const port of ports) {
+        const transporter = this.buildTransporter(auth, port, { endpoint: ep });
+        try {
+          await transporter.verify();
+          this.log.log(`${c.green}✅${c.reset} SMTP verificado para ${auth.user} na porta ${port}`);
+          return true;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.log.warn(`${c.yellow}⚠️${c.reset} verify SMTP falhou na porta ${port}: ${message}`);
+        } finally {
+          transporter.close();
+        }
       }
-    }
+      return false;
+    };
+
+    if (await run(endpoint)) return true;
+    if (endpoint.servername && preferIpv4 && (await run({ host: logical }))) return true;
     return false;
   }
 }
