@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { Mail } from "lucide-react";
 import { useI18n } from "@/i18n/client";
 import { buildOAuthCallbackRedirectTo } from "@/lib/oauth-app-url";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser-client";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { HubMailMarkOnDarkSurface } from "@/components/brand/hubmail-mark";
 
 export default function LoginPage() {
   const { messages } = useI18n();
@@ -61,9 +61,9 @@ export default function LoginPage() {
       <div className="flex flex-1 flex-col justify-center px-4 py-12 sm:px-6">
         <div className="mx-auto w-full max-w-md">
           <Link href="/" className="mb-10 inline-flex items-center gap-2 text-neutral-400 hover:text-white">
-            <div className="flex size-9 items-center justify-center rounded-lg bg-white text-neutral-950">
-              <Mail className="size-4" aria-hidden />
-            </div>
+            <span className="flex size-9 shrink-0 items-center justify-center">
+              <HubMailMarkOnDarkSurface className="size-8" />
+            </span>
             <span className="font-semibold">HubMail</span>
           </Link>
           <h1 className="text-2xl font-semibold tracking-tight">{copy.title}</h1>

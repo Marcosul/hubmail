@@ -13,7 +13,6 @@ import {
   Leaf,
   ListFilter,
   LogOut,
-  Mail,
   Menu,
   Moon,
   Plus,
@@ -33,6 +32,7 @@ import { apiRequest } from "@/api/rest/generic";
 import { SUPPORTED_LOCALES, type AppLocale } from "@/i18n/config";
 import { getLocaleLabel, useI18n } from "@/i18n/client";
 import { getActiveWorkspaceId, setActiveWorkspaceId, useCreateWorkspace, useWorkspaces } from "@/hooks/use-workspace";
+import { HubMailMarkThemedTile } from "@/components/brand/hubmail-mark";
 
 const nav = [
   { href: "/dashboard", labelKey: "overview", icon: LayoutDashboard, exact: true },
@@ -135,8 +135,8 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
   const SidebarContent = () => (
     <>
       <div ref={workspaceMenuRef} className="relative flex h-14 items-center gap-2 border-b border-neutral-200 px-4 dark:border-hub-border">
-        <div className="flex size-8 items-center justify-center rounded-lg bg-neutral-900 text-white dark:bg-white dark:text-neutral-900">
-          <Mail className="size-4" aria-hidden />
+        <div className="flex size-8 items-center justify-center rounded-lg border border-neutral-200 bg-white text-neutral-900 dark:border-transparent dark:bg-transparent dark:text-white">
+          <HubMailMarkThemedTile className="size-4" />
         </div>
         <button
           type="button"
@@ -339,8 +339,8 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
     <>
       <div className="fixed inset-x-0 top-0 z-40 flex h-14 items-center justify-between border-b border-neutral-200 bg-neutral-50 px-4 dark:border-hub-border dark:bg-[#0a0a0a] lg:hidden">
         <Link href="/dashboard" className="flex min-w-0 items-center gap-2">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-neutral-900 text-white dark:bg-white dark:text-neutral-900">
-            <Mail className="size-4" aria-hidden />
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-white text-neutral-900 dark:border-transparent dark:bg-transparent dark:text-white">
+            <HubMailMarkThemedTile className="size-4" />
           </div>
           <span className="truncate text-sm font-semibold text-neutral-900 dark:text-white">HubMail</span>
         </Link>
