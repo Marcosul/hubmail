@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Check, Terminal, Inbox, Globe, Webhook, KeyRound, Bot } from "lucide-react";
+import { ArrowRight, Check, Plug2, Inbox, Globe, Webhook, KeyRound, Bot } from "lucide-react";
 
 const CODE_SNIPPET = `import hubmail from "@hubmail/sdk";
 
@@ -48,9 +48,9 @@ const features = [
     body: "Chaves de API com escopos granulares para integração segura. Revogue sem interromper outros serviços.",
   },
   {
-    icon: Terminal,
-    title: "Self-hosted",
-    body: "Roda no seu próprio servidor de correio. Você controla seus dados, sua infraestrutura, suas políticas.",
+    icon: Plug2,
+    title: "MCP",
+    body: "Exponha inboxes, domínios e webhooks a assistentes e agentes via Model Context Protocol — ferramentas tipadas e descoberta padronizada.",
   },
 ] as const;
 

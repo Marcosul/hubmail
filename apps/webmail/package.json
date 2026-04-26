@@ -24,6 +24,7 @@
     "nuqs": "^2.8.9",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "shiki": "^4.0.2",
     "tailwind-merge": "^2.6.0"
   },
   "devDependencies": {
