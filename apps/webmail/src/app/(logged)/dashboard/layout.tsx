@@ -6,7 +6,7 @@ import { getServerLocale } from "@/i18n/server";
 import { isFatalAuthSessionError } from "@/lib/supabase/auth-session-errors";
 import { createSupabaseServerClient } from "@/lib/supabase/server-client";
 
-export default async function DashboardRootLayout({ children }: { children: React.ReactNode }) {
+export default async function LoggedLayout({ children }: { children: React.ReactNode }) {
   const messages = getMessages(await getServerLocale());
   const supabase = await createSupabaseServerClient();
   const { data: userData, error: authError } = await supabase.auth.getUser();
