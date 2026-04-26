@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Maximize2, Paperclip, Send, Shrink, X } from "lucide-react";
+import { Check, ChevronDown, Maximize2, Paperclip, Send, Shrink, X } from "lucide-react";
 import { useMailFolders, useSaveComposeDraft, useSendMail } from "@/hooks/use-mail";
 import type { ComposeDraft } from "@/components/inboxes/inbox-compose-provider";
 import { useI18n } from "@/i18n/client";
@@ -32,6 +33,31 @@ function splitAddresses(value: string): string[] {
     .filter(Boolean);
 }
 
+/** Só enviar In-Reply-To/References ao SMTP quando parecem Message-Id RFC (evita ids JMAP no cabeçalho). */
+function isLikelyRfcMessageId(value: string | undefined): boolean {
+  if (!value?.trim()) return false;
+  const v = value.trim();
+  return v.startsWith("<") && v.includes("@") && v.endsWith(">");
+}
+
+function replyHeadersForSend(draft: ComposeDraft | undefined): {
+  inReplyTo?: string;
+  references?: string[];
+} {
+  const inReplyTo = draft?.inReplyTo?.trim();
+  const irt = isLikelyRfcMessageId(inReplyTo) ? inReplyTo : undefined;
+  const refs = draft?.references?.filter((r) => isLikelyRfcMessageId(r));
+  return {
+    inReplyTo: irt,
+    references: refs?.length ? refs : undefined,
+  };
+}
+
+const DRAFT_FLUSH_BEFORE_SEND_MS = 3500;
+const SEND_SUCCESS_HOLD_MS = 3000;
+
+type SendButtonPhase = "idle" | "sending" | "sent";
+
 const inputClass =
   "h-9 w-full rounded-md border border-neutral-200 bg-white px-2.5 text-sm text-neutral-900 outline-none transition-colors placeholder:text-neutral-400 focus:border-neutral-400 focus:ring-1 focus:ring-neutral-400 dark:border-hub-border dark:bg-[#141414] dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:border-white/30 dark:focus:ring-white/20";
 
@@ -57,6 +83,7 @@ export function EmailComposerCard({
   const [body, setBody] = useState(initialDraft?.text ?? "");
   const [showCc, setShowCc] = useState(Boolean(initialDraft?.cc));
   const [error, setError] = useState<string | null>(null);
+  const [sendButtonPhase, setSendButtonPhase] = useState<SendButtonPhase>("idle");
   const router = useRouter();
   const queryClient = useQueryClient();
   const send = useSendMail();
@@ -76,6 +103,7 @@ export function EmailComposerCard({
     setBody(initialDraft?.text ?? "");
     setShowCc(Boolean(initialDraft?.cc));
     setError(null);
+    setSendButtonPhase("idle");
     draftJmapIdRef.current = initialDraft?.jmapDraftEmailId?.trim() || null;
   }, [
     initialDraft?.to,
@@ -170,31 +198,47 @@ export function EmailComposerCard({
       clearTimeout(draftSaveTimerRef.current);
       draftSaveTimerRef.current = null;
     }
-    await draftSaveChainRef.current.catch(() => {});
-    const draftIdToRemove = draftJmapIdRef.current;
+    const replyHdr = replyHeadersForSend(initialDraft);
+    flushSync(() => {
+      setSendButtonPhase("sending");
+    });
     try {
+      await Promise.race([
+        draftSaveChainRef.current.catch(() => {}),
+        new Promise<void>((resolve) => {
+          window.setTimeout(resolve, DRAFT_FLUSH_BEFORE_SEND_MS);
+        }),
+      ]);
+      const draftIdToRemove = draftJmapIdRef.current;
       await send.mutateAsync({
         mailboxId,
         to: recipients,
         cc: splitAddresses(cc),
         subject: subject.trim() || messages.inboxes.noSubject,
         text: trimmedBody,
-        inReplyTo: initialDraft?.inReplyTo,
-        references: initialDraft?.references,
+        inReplyTo: replyHdr.inReplyTo,
+        references: replyHdr.references,
         draftEmailId: draftIdToRemove ?? undefined,
       });
       draftJmapIdRef.current = null;
-      await queryClient.refetchQueries({ queryKey: ["mail-threads", mailboxId] });
-      await queryClient.refetchQueries({ queryKey: ["mail-folders", mailboxId] });
+      void queryClient.refetchQueries({ queryKey: ["mail-threads", mailboxId] });
+      void queryClient.refetchQueries({ queryKey: ["mail-folders", mailboxId] });
+      flushSync(() => {
+        setSendButtonPhase("sent");
+      });
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, SEND_SUCCESS_HOLD_MS);
+      });
       const sentSlug = resolveSentFolderSlug(folders);
       router.push(inboxFolderHref(mailboxId, sentSlug));
       onClose?.();
     } catch (err) {
+      setSendButtonPhase("idle");
       setError(err instanceof Error ? err.message : copy.sendError);
     }
   }
 
-  const sending = send.isPending;
+  const sendButtonBusy = sendButtonPhase !== "idle";
 
   return (
     <section
@@ -335,11 +379,24 @@ export function EmailComposerCard({
         <button
           type="button"
           onClick={handleSend}
-          disabled={sending}
-          className="inline-flex items-center gap-1.5 rounded-md bg-neutral-900 px-3 py-2 text-xs font-medium text-white hover:bg-neutral-800 disabled:opacity-60 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-100"
+          disabled={sendButtonBusy}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors",
+            sendButtonPhase === "sent"
+              ? "bg-emerald-600 text-white hover:bg-emerald-600 disabled:opacity-100 dark:bg-emerald-500 dark:hover:bg-emerald-500"
+              : "bg-neutral-900 text-white hover:bg-neutral-800 disabled:opacity-60 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-100",
+          )}
         >
-          <Send className="size-3.5" />
-          {sending ? copy.sending : copy.send}
+          {sendButtonPhase === "sent" ? (
+            <Check className="size-3.5 shrink-0" aria-hidden />
+          ) : (
+            <Send className="size-3.5 shrink-0" aria-hidden />
+          )}
+          {sendButtonPhase === "sent"
+            ? copy.sentButton
+            : sendButtonPhase === "sending"
+              ? copy.sendingButton
+              : copy.send}
         </button>
         <button
           type="button"

@@ -605,10 +605,14 @@ export class JmapClient {
     const failedDestroy = result?.notDestroyed?.[emailId];
     const failed = failedUpdate || failedDestroy;
     if (failed) {
-      /** Rascunho já removido por Email/set rotate / corrida com auto-save — apagar de novo é no-op. */
-      if (patch.destroy && failed.type === 'notFound') {
+      /**
+       * Rascunho já substituído por Email/set rotate / corrida com auto-save: o id antigo
+       * deixa de existir. Destroy com notFound já era no-op; mover/marcar com id obsoleto
+       * deve ser idempotente para não quebrar a UI (ex.: "para lixo" com lista desatualizada).
+       */
+      if (failed.type === 'notFound') {
         this.log.debug(
-          `${c.cyan}🗑️${c.reset} Email/set destroy: ${emailId} já inexistente (notFound), a ignorar`,
+          `${c.cyan}🗑️${c.reset} Email/set: ${emailId} já inexistente (notFound) — ${patch.destroy ? 'destroy' : 'update'} ignorado`,
         );
         return { ok: true };
       }
