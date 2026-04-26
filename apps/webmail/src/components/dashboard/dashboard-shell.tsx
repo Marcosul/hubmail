@@ -29,7 +29,7 @@ export function DashboardShell({
   const crumbs = useMemo(() => {
     const parts = pathname.split("/").filter(Boolean);
     const breadcrumbs = messages.dashboard.breadcrumbs;
-    const out: { label: string; href?: string }[] = [{ label: messages.dashboard.dashboard, href: "/dashboard/overview" }];
+    const out: { label: string; href?: string }[] = [{ label: messages.dashboard.dashboard, href: "/dashboard" }];
     if (parts[0] === "dashboard" && parts[1]) {
       out.push({
         label: breadcrumbs[parts[1] as keyof typeof breadcrumbs] ?? titleCase(parts[1]),

@@ -10,7 +10,7 @@ pnpm install
 pnpm --filter @hubmail/webmail dev
 ```
 
-Abre [http://localhost:3010](http://localhost:3010): landing **Home**; **Sign in** aceita qualquer email/password (sessão demo via cookie). Área logada: `/dashboard/overview` e restantes rotas sob `/dashboard/...`.
+Abre [http://localhost:3010](http://localhost:3010): landing **Home**; **Sign in** aceita qualquer email/password (sessão demo via cookie). Área logada: `/dashboard` (visão geral) e restantes rotas sob `/dashboard/...`.
 
 - Tema claro/escuro: botão no rodapé da sidebar.
 - Estrutura alinhada ao monorepo `opensync` (pnpm + turbo); cliente HTTP reutilizável em `apps/webmail/src/api/rest/generic.ts`.

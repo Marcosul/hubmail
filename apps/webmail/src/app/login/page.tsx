@@ -13,7 +13,7 @@ export default function LoginPage() {
   const { messages } = useI18n();
   const copy = messages.login;
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") ?? "/dashboard/overview";
+  const next = searchParams.get("next") ?? "/dashboard";
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const OAuthNextCookieName = "hubmail_oauth_next";

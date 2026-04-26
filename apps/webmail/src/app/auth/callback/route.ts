@@ -8,11 +8,11 @@ const OAUTH_NEXT_COOKIE = "hubmail_oauth_next";
 
 function getSafeNextPath(nextValue: string | null) {
   if (!nextValue) {
-    return "/dashboard/overview";
+    return "/dashboard";
   }
 
   if (!nextValue.startsWith("/") || nextValue.startsWith("//")) {
-    return "/dashboard/overview";
+    return "/dashboard";
   }
 
   return nextValue;

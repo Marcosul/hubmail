@@ -72,7 +72,17 @@ export async function middleware(request: NextRequest) {
 
   if (isLoginPath && user) {
     const url = request.nextUrl.clone();
-    url.pathname = "/dashboard/overview";
+    const nextParam = url.searchParams.get("next");
+    if (
+      nextParam &&
+      nextParam.startsWith("/") &&
+      !nextParam.startsWith("//") &&
+      nextParam.startsWith("/dashboard")
+    ) {
+      url.pathname = nextParam;
+    } else {
+      url.pathname = "/dashboard";
+    }
     url.searchParams.delete("next");
     return NextResponse.redirect(url);
   }
