@@ -1282,6 +1282,8 @@ export const messages = {
       emptyBody: "Escribe el cuerpo del mensaje antes de enviar.",
       send: "Enviar",
       sending: "Enviando…",
+      sendingButton: "Enviando…",
+      sentButton: "¡ENVIADO!",
       close: "Cerrar composición",
       minimize: "Minimizar composición",
       maximize: "Maximizar composición",
