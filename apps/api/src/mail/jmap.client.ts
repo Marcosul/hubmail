@@ -25,6 +25,15 @@ export interface JmapCredentials {
 const MAIL_CAP = 'urn:ietf:params:jmap:mail';
 const CORE_CAP = 'urn:ietf:params:jmap:core';
 
+/** Node sets `error.cause` on fetch failures; avoid `Error.cause` typing (needs lib es2022+). */
+function errorChainDetail(err: unknown): string {
+  if (!(err instanceof Error)) return '';
+  const nested = (err as Error & { cause?: unknown }).cause;
+  if (nested instanceof Error) return nested.message;
+  if (typeof nested === 'string') return nested;
+  return '';
+}
+
 @Injectable()
 export class JmapClient {
   private readonly log = new Logger(JmapClient.name);
@@ -42,6 +51,49 @@ export class JmapClient {
     return url.endsWith('/jmap/session') ? url : `${url.replace(/\/$/, '')}/jmap/session`;
   }
 
+  /** Strip `/jmap/` → `/jmap` so reverse-proxy prefix rules match reliably. */
+  private normalizeJmapResourceHref(href: string): string {
+    const u = new URL(href);
+    if (u.pathname.length > 1 && u.pathname.endsWith('/')) {
+      u.pathname = u.pathname.replace(/\/+$/, '') || '/';
+    }
+    return u.href;
+  }
+
+  /**
+   * Stalwart often advertises apiUrl/downloadUrl/uploadUrl with the internal bind host
+   * (e.g. http://127.0.0.1:8080) while the session is fetched via the public HTTPS URL.
+   * Node fetch then fails with "fetch failed". Keep path/query from the server response
+   * but force the same origin as the configured session endpoint.
+   *
+   * When the advertised host already matches the session host, keep scheme and port from
+   * the server (e.g. http://mail.example/jmap while session is https://mail.example/jmap/session).
+   * Forcing https://…/jmap on 443 when nginx only proxies JMAP over HTTP on that path yields
+   * OpenSSL `packet length too long` (TLS client reading plain HTTP).
+   */
+  private rewriteJmapResourceUrl(sessionEndpoint: string, resourceUrl: string): string {
+    const base = new URL(sessionEndpoint);
+    const target = new URL(resourceUrl, base);
+
+    let out: string;
+    if (target.hostname.toLowerCase() === base.hostname.toLowerCase()) {
+      out = target.href;
+      if (target.protocol === 'http:' && base.protocol === 'https:') {
+        this.log.debug(
+          `${c.yellow}📎${c.reset} JMAP URL no mesmo host mantém ${c.yellow}http${c.reset} anunciado pelo servidor (${target.pathname}) — ajuste o proxy ou STALWART_JMAP_API_URL se precisar de TLS aqui.`,
+        );
+      }
+    } else {
+      out = `${base.origin}${target.pathname}${target.search}${target.hash}`;
+      if (out !== target.href) {
+        this.log.debug(
+          `${c.yellow}🔀${c.reset} JMAP URL repointed: ${c.yellow}${target.origin}${c.reset} → ${c.green}${base.origin}${c.reset} (${target.pathname})`,
+        );
+      }
+    }
+    return this.normalizeJmapResourceHref(out);
+  }
+
   private authHeader(creds: JmapCredentials): string {
     return `Basic ${Buffer.from(`${creds.username}:${creds.password}`, 'utf8').toString('base64')}`;
   }
@@ -55,10 +107,20 @@ export class JmapClient {
 
     const url = this.sessionUrl();
     this.log.debug(`${c.cyan}🧭${c.reset} JMAP session → ${url}`);
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: { Authorization: this.authHeader(creds) },
-    });
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'GET',
+        headers: { Authorization: this.authHeader(creds) },
+      });
+    } catch (err) {
+      const cause = errorChainDetail(err);
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log.error(
+        `${c.red}❌${c.reset} JMAP session fetch falhou${cause ? ` (${cause})` : ''}: ${msg}`,
+      );
+      throw new BadGatewayException(`JMAP session indisponível: ${msg}${cause ? ` — ${cause}` : ''}`);
+    }
     if (!res.ok) {
       const text = await res.text();
       this.log.error(`${c.red}❌ JMAP session falhou (${res.status}):${c.reset} ${text}`);
@@ -71,13 +133,18 @@ export class JmapClient {
       primaryAccounts: Record<string, string>;
       accounts?: Record<string, { name?: string; isPersonal?: boolean }>;
     };
+    const rw = (u: string) => this.rewriteJmapResourceUrl(url, u);
+    const apiOverride = this.config.get<string>('STALWART_JMAP_API_URL')?.trim();
     const session: JmapSession = {
-      apiUrl: raw.apiUrl,
-      downloadUrl: raw.downloadUrl,
-      uploadUrl: raw.uploadUrl,
+      apiUrl: apiOverride ? this.normalizeJmapResourceHref(apiOverride) : rw(raw.apiUrl),
+      downloadUrl: rw(raw.downloadUrl),
+      uploadUrl: rw(raw.uploadUrl),
       primaryAccounts: raw.primaryAccounts,
       accounts: raw.accounts ?? {},
     };
+    if (apiOverride) {
+      this.log.debug(`${c.cyan}⚙️${c.reset} JMAP apiUrl fixo via STALWART_JMAP_API_URL → ${session.apiUrl}`);
+    }
     this.sessionCache.set(cacheKey, { session, fetchedAt: Date.now() });
     this.log.log(`${c.green}🟢${c.reset} JMAP session ok (user ${creds.username})`);
     return session;
@@ -100,14 +167,24 @@ export class JmapClient {
       using: [CORE_CAP, MAIL_CAP],
       methodCalls: calls,
     };
-    const res = await fetch(session.apiUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: this.authHeader(creds),
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
+    let res: Response;
+    try {
+      res = await fetch(session.apiUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: this.authHeader(creds),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      const cause = errorChainDetail(err);
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log.error(
+        `${c.red}❌${c.reset} JMAP fetch POST falhou → ${c.cyan}${session.apiUrl}${c.reset}${cause ? ` (${cause})` : ''}: ${msg}`,
+      );
+      throw new BadGatewayException(`JMAP indisponível: ${msg}${cause ? ` — ${cause}` : ''}`);
+    }
     if (!res.ok) {
       const text = await res.text();
       this.log.error(

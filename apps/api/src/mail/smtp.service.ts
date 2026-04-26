@@ -33,9 +33,19 @@ export class SmtpService {
 
   constructor(private readonly config: ConfigService) {}
 
-  private buildTransporter(auth: { user: string; pass: string }): Transporter {
+  private parsePortList(raw: string | undefined): number[] {
+    if (!raw) return [];
+    return raw
+      .split(',')
+      .map((entry) => Number(entry.trim()))
+      .filter((entry) => Number.isInteger(entry) && entry > 0 && entry <= 65535);
+  }
+
+  private buildTransporter(
+    auth: { user: string; pass: string },
+    port: number,
+  ): Transporter {
     const host = this.config.get<string>('STALWART_SMTP_HOST')?.trim();
-    const port = Number(this.config.get<string>('STALWART_SMTP_PORT') ?? 587);
     if (!host) {
       throw new BadGatewayException('Defina STALWART_SMTP_HOST no .env');
     }
@@ -45,14 +55,31 @@ export class SmtpService {
       secure: port === 465,
       requireTLS: port === 587,
       auth,
+      connectionTimeout: 12_000,
+      greetingTimeout: 12_000,
+      socketTimeout: 20_000,
+      name: host,
     });
   }
 
-  async send(auth: { user: string; pass: string }, env: SmtpEnvelope) {
-    const transporter = this.buildTransporter(auth);
-    this.log.log(
-      `${c.cyan}✉️${c.reset}  SMTP send from=${env.from} to=${env.to.join(',')} subject=${env.subject.slice(0, 60)}`,
+  private resolvePorts(): number[] {
+    const primaryPort = Number(this.config.get<string>('STALWART_SMTP_PORT') ?? 587);
+    const fallbackPorts = this.parsePortList(
+      this.config.get<string>('STALWART_SMTP_FALLBACK_PORTS'),
     );
+    const ordered = [primaryPort, ...fallbackPorts, 465].filter((port, index, list) => {
+      if (!Number.isInteger(port) || port <= 0 || port > 65535) return false;
+      return list.indexOf(port) === index;
+    });
+    return ordered.length ? ordered : [587, 465];
+  }
+
+  private async trySendOnPort(
+    auth: { user: string; pass: string },
+    env: SmtpEnvelope,
+    port: number,
+  ) {
+    const transporter = this.buildTransporter(auth, port);
     try {
       const info = await transporter.sendMail({
         from: env.from,
@@ -70,33 +97,57 @@ export class SmtpService {
           contentType: a.contentType,
         })),
       });
-      this.log.log(`${c.green}🚀${c.reset} enviado: ${info.messageId ?? '(sem id)'}`);
+      this.log.log(`${c.green}🚀${c.reset} enviado na porta ${port}: ${info.messageId ?? '(sem id)'}`);
       return {
         messageId: info.messageId ?? null,
         accepted: info.accepted as string[],
         rejected: info.rejected as string[],
       };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.log.error(`${c.red}❌ SMTP falhou:${c.reset} ${message}`);
-      throw new BadGatewayException(`SMTP falhou: ${message}`);
     } finally {
       transporter.close();
     }
   }
 
-  async verify(auth: { user: string; pass: string }) {
-    const transporter = this.buildTransporter(auth);
-    try {
-      await transporter.verify();
-      this.log.log(`${c.green}✅${c.reset} SMTP verificado para ${auth.user}`);
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.log.warn(`${c.yellow}⚠️${c.reset} verify SMTP falhou: ${message}`);
-      return false;
-    } finally {
-      transporter.close();
+  async send(auth: { user: string; pass: string }, env: SmtpEnvelope) {
+    this.log.log(
+      `${c.cyan}✉️${c.reset}  SMTP send from=${env.from} to=${env.to.join(',')} subject=${env.subject.slice(0, 60)}`,
+    );
+    const ports = this.resolvePorts();
+    this.log.log(`${c.cyan}🧭${c.reset} tentativas SMTP nas portas: ${ports.join(', ')}`);
+
+    let lastError: unknown = null;
+    for (const port of ports) {
+      try {
+        this.log.log(`${c.cyan}🔌${c.reset} tentando SMTP ${auth.user} via porta ${port}`);
+        return await this.trySendOnPort(auth, env, port);
+      } catch (error) {
+        lastError = error;
+        const message = error instanceof Error ? error.message : String(error);
+        this.log.warn(`${c.yellow}⚠️${c.reset} falha na porta ${port}: ${message}`);
+      }
     }
+
+    const finalMessage =
+      lastError instanceof Error ? lastError.message : String(lastError ?? 'erro desconhecido');
+    this.log.error(`${c.red}❌ SMTP falhou em todas as portas:${c.reset} ${finalMessage}`);
+    throw new BadGatewayException(`SMTP falhou: ${finalMessage}`);
+  }
+
+  async verify(auth: { user: string; pass: string }) {
+    const ports = this.resolvePorts();
+    for (const port of ports) {
+      const transporter = this.buildTransporter(auth, port);
+      try {
+        await transporter.verify();
+        this.log.log(`${c.green}✅${c.reset} SMTP verificado para ${auth.user} na porta ${port}`);
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.log.warn(`${c.yellow}⚠️${c.reset} verify SMTP falhou na porta ${port}: ${message}`);
+      } finally {
+        transporter.close();
+      }
+    }
+    return false;
   }
 }

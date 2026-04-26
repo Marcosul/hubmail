@@ -33,15 +33,21 @@ export function ThreadViewer({
   const { locale, messages } = useI18n();
   const copy = messages.inboxes;
   const composeCopy = messages.compose;
-  const { data, isLoading, isError, refetch } = useThread(mailboxId, threadId);
+  const { data, isLoading, isError, error, refetch } = useThread(mailboxId, threadId);
 
   if (isLoading) {
     return <p className="px-4 py-10 text-center text-sm text-neutral-500">{messages.common.loading}</p>;
   }
   if (isError || !data) {
+    const detail = error instanceof Error ? error.message : "";
     return (
-      <div className="flex flex-col items-center gap-3 p-10 text-center text-sm text-neutral-500">
-        {copy.loadError}
+      <div className="flex max-w-md flex-col items-center gap-3 p-10 text-center text-sm text-neutral-500">
+        <p className="font-medium text-neutral-700 dark:text-neutral-300">{copy.threadLoadError}</p>
+        {detail ? (
+          <p className="break-words text-xs text-neutral-500 dark:text-neutral-400" title={detail}>
+            {detail}
+          </p>
+        ) : null}
         <button
           type="button"
           onClick={() => refetch()}

@@ -16,6 +16,7 @@ import {
   Mail,
   Menu,
   Moon,
+  Plus,
   Settings,
   Sun,
   Webhook,
@@ -31,7 +32,7 @@ import { cn } from "@/lib/utils";
 import { apiRequest } from "@/api/rest/generic";
 import { SUPPORTED_LOCALES, type AppLocale } from "@/i18n/config";
 import { getLocaleLabel, useI18n } from "@/i18n/client";
-import { useWorkspaces } from "@/hooks/use-workspace";
+import { getActiveWorkspaceId, setActiveWorkspaceId, useCreateWorkspace, useWorkspaces } from "@/hooks/use-workspace";
 
 const nav = [
   { href: "/dashboard", labelKey: "overview", icon: LayoutDashboard, exact: true },
@@ -57,22 +58,37 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
   const [mounted, setMounted] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const settingsMenuRef = useRef<HTMLDivElement>(null);
+  const workspaceMenuRef = useRef<HTMLDivElement>(null);
   const { data: workspaces } = useWorkspaces();
-  const activeWorkspace = workspaces?.[0];
+  const createWorkspace = useCreateWorkspace();
+  const [activeWorkspaceId, setActiveWorkspaceIdState] = useState<string | undefined>();
+  const activeWorkspace =
+    workspaces?.find((workspace) => workspace.id === activeWorkspaceId) ?? workspaces?.[0];
 
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
-    if (!settingsOpen) return;
+    setActiveWorkspaceIdState(getActiveWorkspaceId());
+  }, []);
+
+  useEffect(() => {
+    if (!settingsOpen && !workspaceMenuOpen) return;
     function handlePointerDown(event: PointerEvent) {
-      const node = settingsMenuRef.current;
-      if (node && !node.contains(event.target as Node)) {
+      const settingsNode = settingsMenuRef.current;
+      const workspaceNode = workspaceMenuRef.current;
+      if (settingsNode && !settingsNode.contains(event.target as Node)) {
         setSettingsOpen(false);
+      }
+      if (workspaceNode && !workspaceNode.contains(event.target as Node)) {
+        setWorkspaceMenuOpen(false);
       }
     }
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setSettingsOpen(false);
+      if (event.key !== "Escape") return;
+      setSettingsOpen(false);
+      setWorkspaceMenuOpen(false);
     }
     document.addEventListener("pointerdown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);
@@ -80,7 +96,7 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [settingsOpen]);
+  }, [settingsOpen, workspaceMenuOpen]);
 
   function handleLocaleChange(nextLocale: AppLocale) {
     setLocale(nextLocale);
@@ -93,6 +109,24 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
     router.refresh();
   }
 
+  function handleWorkspaceSelect(workspaceId: string) {
+    setActiveWorkspaceId(workspaceId);
+    setActiveWorkspaceIdState(workspaceId);
+    setWorkspaceMenuOpen(false);
+    router.refresh();
+  }
+
+  async function handleAddWorkspace() {
+    const nextWorkspaceNumber = (workspaces?.length ?? 0) + 1;
+    const workspace = await createWorkspace.mutateAsync({
+      name: `Workspace ${nextWorkspaceNumber}`,
+    });
+    setActiveWorkspaceId(workspace.id);
+    setActiveWorkspaceIdState(workspace.id);
+    setWorkspaceMenuOpen(false);
+    router.refresh();
+  }
+
   function isActive(href: string, exact?: boolean) {
     if (exact) return pathname === href;
     return pathname === href || pathname.startsWith(`${href}/`);
@@ -100,13 +134,16 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
 
   const SidebarContent = () => (
     <>
-      <div className="flex h-14 items-center gap-2 border-b border-neutral-200 px-4 dark:border-hub-border">
+      <div ref={workspaceMenuRef} className="relative flex h-14 items-center gap-2 border-b border-neutral-200 px-4 dark:border-hub-border">
         <div className="flex size-8 items-center justify-center rounded-lg bg-neutral-900 text-white dark:bg-white dark:text-neutral-900">
           <Mail className="size-4" aria-hidden />
         </div>
         <button
           type="button"
+          onClick={() => setWorkspaceMenuOpen((open) => !open)}
           className="flex min-w-0 flex-1 items-center justify-between gap-1 rounded-md px-2 py-1.5 text-left text-sm font-medium text-neutral-900 hover:bg-neutral-200/80 dark:text-white dark:hover:bg-white/5"
+          aria-expanded={workspaceMenuOpen}
+          aria-haspopup="true"
         >
           <span className="truncate">{activeWorkspace?.organization?.name ?? "HubMail"}</span>
           <ChevronDown className="size-4 shrink-0 opacity-60" aria-hidden />
@@ -119,6 +156,40 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
         >
           <X className="size-4" aria-hidden />
         </button>
+        {workspaceMenuOpen ? (
+          <div className="absolute left-12 right-4 top-12 z-50 rounded-md border border-neutral-200 bg-white p-1.5 shadow-lg dark:border-hub-border dark:bg-hub-card">
+            <div className="max-h-56 space-y-1 overflow-y-auto">
+              {workspaces?.map((workspace) => {
+                const isCurrent = workspace.id === activeWorkspace?.id;
+                return (
+                  <button
+                    key={workspace.id}
+                    type="button"
+                    onClick={() => handleWorkspaceSelect(workspace.id)}
+                    className={cn(
+                      "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors",
+                      isCurrent
+                        ? "bg-neutral-200/90 font-medium text-neutral-950 dark:bg-white/10 dark:text-white"
+                        : "text-neutral-600 hover:bg-neutral-200/60 dark:text-neutral-300 dark:hover:bg-white/5",
+                    )}
+                  >
+                    <span className="truncate">{workspace.name}</span>
+                    <span className="truncate text-[10px] opacity-70">{workspace.role}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={handleAddWorkspace}
+              disabled={createWorkspace.isPending}
+              className="mt-1 flex w-full items-center justify-center gap-1 rounded-md border border-neutral-200 px-2 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-200/60 disabled:cursor-not-allowed disabled:opacity-60 dark:border-hub-border dark:text-neutral-200 dark:hover:bg-white/5"
+            >
+              <Plus className="size-3.5" aria-hidden />
+              {createWorkspace.isPending ? "Adding..." : "Add workspace"}
+            </button>
+          </div>
+        ) : null}
       </div>
 
       <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">

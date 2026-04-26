@@ -192,3 +192,32 @@ O singleton **Security** pode banir o teu IP publico como **`portScanning`** dep
 4. `sudo systemctl restart stalwart` se ainda houver sessoes estranhas em memoria.
 
 **Nota:** valores como `20000` por dia reduzem falsos positivos para desenvolvimento; em producao podes afinar entre seguranca e tolerancia a *scanners* reais.
+
+## 15) Allowlist permanente (meu IP + backend producao)
+
+Para evitar novos bloqueios no admin/API por falso positivo de scanner:
+
+- **Meu IP atual (marco):** `138.118.28.246/32`
+- **Status:** adicionado no Stalwart como `AllowedIp` com `reason=admin-workstation-marco` (2026-04-25).
+
+### Comandos (VPS)
+
+```bash
+# Ver allowlist atual
+stalwart-cli --url https://mail.hubmail.to -k --user admin@hubmail.to --password '***' query allowedip --json
+
+# Adicionar/regravar IP do admin
+stalwart-cli --url https://mail.hubmail.to -k --user admin@hubmail.to --password '***' \
+  create allowedip --json '{"address":"138.118.28.246/32","reason":"admin-workstation-marco"}'
+
+# Descobrir e permitir IP de saida do backend de producao
+# (executar no host/container do backend: curl -4 ifconfig.me)
+stalwart-cli --url https://mail.hubmail.to -k --user admin@hubmail.to --password '***' \
+  create allowedip --json '{"address":"<BACKEND_EGRESS_IP>/32","reason":"hubmail-api-production-egress"}'
+```
+
+### Observacoes importantes
+
+1. `AllowedIp` e diferente de `BlockedIp`: entradas em `AllowedIp` evitam bloqueio automatico por regras de seguranca.
+2. Em plataformas com egress dinamico, manter monitorizacao de `query blockedip` e atualizar a allowlist quando o IP de saida mudar.
+3. Nao confundir IP do dominio (`api.hubmail.to`) com IP de **egress** real do backend; o correto e sempre o IP visto por `ifconfig.me` a partir do ambiente de producao.
