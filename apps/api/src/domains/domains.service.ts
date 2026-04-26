@@ -649,11 +649,24 @@ export class DomainsService {
   }
 
   async getPlanInfo(workspaceId: string) {
-    const [count, limit] = await Promise.all([
+    const wp = await this.prisma.workspacePlan.findUnique({
+      where: { workspaceId },
+      include: { plan: true },
+    });
+    const maxDomains = wp?.plan.maxDomains ?? DEFAULT_MAX_DOMAINS;
+    const maxInboxes = wp?.plan.maxInboxes ?? 3;
+
+    const [domainCount, mailboxCount] = await Promise.all([
       this.prisma.domain.count({ where: { workspaceId } }),
-      this.getPlanLimit(workspaceId),
+      this.prisma.mailbox.count({ where: { workspaceId } }),
     ]);
-    return { used: count, limit };
+
+    return {
+      used: domainCount,
+      limit: maxDomains,
+      mailboxesUsed: mailboxCount,
+      mailboxesLimit: maxInboxes,
+    };
   }
 
   private normalizeTxtAnswer(data: string): string {

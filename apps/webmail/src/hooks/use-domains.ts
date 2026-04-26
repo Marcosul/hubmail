@@ -15,6 +15,8 @@ export interface Domain {
 export interface DomainPlanInfo {
   used: number;
   limit: number;
+  mailboxesUsed: number;
+  mailboxesLimit: number;
 }
 
 export interface CreateDomainResponse extends Domain {
