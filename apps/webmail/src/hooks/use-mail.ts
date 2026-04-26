@@ -124,11 +124,44 @@ export function useSendMail(): UseMutationResult<SendMailResult, Error, SendMail
 
 export function useCreateMailbox() {
   const qc = useQueryClient();
-  return useMutation<MailboxSummary, Error, { address: string; password: string; displayName?: string; username?: string }>({
+  return useMutation<MailboxSummary, Error, { address: string; displayName?: string; username?: string }>({
     mutationFn: (body) =>
       apiRequest<MailboxSummary>("/api/mailboxes", { method: "POST", body }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["mailboxes"] });
+    },
+  });
+}
+
+export function useRotateMailboxCredential() {
+  const qc = useQueryClient();
+  return useMutation<
+    MailboxSummary,
+    Error,
+    { mailboxId: string; password: string; username?: string }
+  >({
+    mutationFn: ({ mailboxId, ...body }) =>
+      apiRequest<MailboxSummary>(`/api/mailboxes/${encodeURIComponent(mailboxId)}/rotate-credential`, {
+        method: "POST",
+        body,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["mailboxes"] });
+    },
+  });
+}
+
+export function useDeleteMailbox() {
+  const qc = useQueryClient();
+  return useMutation<{ ok?: boolean } | MailboxSummary, Error, { mailboxId: string }>({
+    mutationFn: ({ mailboxId }) =>
+      apiRequest<{ ok?: boolean } | MailboxSummary>(`/api/mailboxes/${encodeURIComponent(mailboxId)}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["mailboxes"] });
+      qc.invalidateQueries({ queryKey: ["mail-folders"] });
+      qc.invalidateQueries({ queryKey: ["mail-threads"] });
     },
   });
 }

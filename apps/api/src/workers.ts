@@ -33,7 +33,9 @@ async function bootstrap(): Promise<void> {
   });
   await app.init();
 
-  log.log(`${c.green}✅ HubMail workers online (ingest · send · webhooks)${c.reset}`);
+  log.log(
+    `${c.green}✅ HubMail workers online (ingest · send · webhooks · stalwart-domain)${c.reset}`,
+  );
   log.log(`${c.cyan}🔌 Redis: ${process.env.REDIS_URL.replace(/:[^:@/]*@/, ':***@')}${c.reset}`);
 
   const shutdown = async (signal: string) => {

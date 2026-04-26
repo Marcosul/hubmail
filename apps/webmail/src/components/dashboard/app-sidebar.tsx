@@ -365,8 +365,8 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-[min(20rem,calc(100vw-2rem))] -translate-x-full flex-col border-r border-neutral-200 bg-neutral-50 transition-transform lg:static lg:z-auto lg:w-[260px] lg:translate-x-0",
-          mobileOpen && "translate-x-0",
+          "fixed inset-y-0 left-0 z-50 flex w-[min(20rem,calc(100vw-2rem))] flex-col border-r border-neutral-200 bg-neutral-50 transition-transform lg:static lg:z-auto lg:w-[260px] lg:translate-x-0",
+          mobileOpen ? "translate-x-0" : "-translate-x-full max-lg:pointer-events-none",
           "dark:border-hub-border dark:bg-[#0a0a0a]",
         )}
       >

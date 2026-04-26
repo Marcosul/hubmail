@@ -9,13 +9,14 @@ export class CreateMailboxApiDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
-  @Length(1, 64)
+  @Length(1, 128)
   displayName?: string;
 
-  @ApiProperty({ description: 'App-password gerado no Stalwart Account Manager' })
+  @ApiProperty({ required: false, description: 'Opcional: se omitido, a API gera uma credencial interna automaticamente' })
+  @IsOptional()
   @IsString()
   @Length(6, 256)
-  password!: string;
+  password?: string;
 
   @ApiProperty({ required: false, description: 'Override se diferente do email' })
   @IsOptional()

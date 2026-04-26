@@ -1,7 +1,9 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { DomainsModule } from '../domains/domains.module';
 import { MailIngestWorker } from './mail-ingest.worker';
 import { MailSendRetryWorker } from './mail-send.worker';
+import { StalwartDomainProvisionWorker } from './stalwart-domain-provision.worker';
 import { WebhookDispatchWorker } from './webhook-dispatch.worker';
 import { QueueService } from './queue.service';
 import { REDIS_CONNECTION, createRedisConnection } from './redis.provider';
@@ -10,7 +12,7 @@ import { AutomationsModule } from '../automations/automations.module';
 
 @Global()
 @Module({
-  imports: [MailModule, AutomationsModule],
+  imports: [MailModule, AutomationsModule, DomainsModule],
   providers: [
     {
       provide: REDIS_CONNECTION,
@@ -22,6 +24,7 @@ import { AutomationsModule } from '../automations/automations.module';
     MailIngestWorker,
     MailSendRetryWorker,
     WebhookDispatchWorker,
+    StalwartDomainProvisionWorker,
   ],
   exports: [QueueService],
 })

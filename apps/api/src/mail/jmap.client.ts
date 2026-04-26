@@ -15,6 +15,7 @@ const c = {
   green: '\x1b[32m',
   yellow: '\x1b[33m',
   red: '\x1b[31m',
+  magenta: '\x1b[35m',
 };
 
 export interface JmapCredentials {
@@ -24,6 +25,8 @@ export interface JmapCredentials {
 
 const MAIL_CAP = 'urn:ietf:params:jmap:mail';
 const CORE_CAP = 'urn:ietf:params:jmap:core';
+const STALWART_CAP = 'urn:stalwart:jmap';
+const PRINCIPALS_CAP = 'urn:ietf:params:jmap:principals';
 
 /** Node sets `error.cause` on fetch failures; avoid `Error.cause` typing (needs lib es2022+). */
 function errorChainDetail(err: unknown): string {
@@ -32,6 +35,55 @@ function errorChainDetail(err: unknown): string {
   if (nested instanceof Error) return nested.message;
   if (typeof nested === 'string') return nested;
   return '';
+}
+
+function errorChainFullText(err: unknown): string {
+  const parts: string[] = [];
+  let cur: unknown = err;
+  let depth = 0;
+  while (cur instanceof Error && depth < 6) {
+    parts.push(cur.message);
+    cur = (cur as Error & { cause?: unknown }).cause;
+    depth += 1;
+  }
+  return parts.join(' ').toLowerCase();
+}
+
+/** OpenSSL/client TLS noise when speaking TLS to a socket that returns plain HTTP (reverse-proxy split). */
+function isLikelyTlsOverHttpResponse(err: unknown): boolean {
+  const t = errorChainFullText(err);
+  return (
+    t.includes('packet length too long') ||
+    t.includes('wrong version number') ||
+    t.includes('tls_get_more_records') ||
+    t.includes('ssl routines') ||
+    t.includes('decryption failed or bad record mac') ||
+    t.includes('record layer failure')
+  );
+}
+
+function httpsToHttpSameResource(apiUrl: string): string | null {
+  try {
+    const u = new URL(apiUrl);
+    if (u.protocol !== 'https:') return null;
+    u.protocol = 'http:';
+    if (u.port === '443') u.port = '';
+    return u.href;
+  } catch {
+    return null;
+  }
+}
+
+function httpsToHttpPortSameResource(apiUrl: string, port: number): string | null {
+  try {
+    const u = new URL(apiUrl);
+    if (u.protocol !== 'https:') return null;
+    u.protocol = 'http:';
+    u.port = String(port);
+    return u.href;
+  } catch {
+    return null;
+  }
 }
 
 @Injectable()
@@ -114,12 +166,35 @@ export class JmapClient {
         headers: { Authorization: this.authHeader(creds) },
       });
     } catch (err) {
+      const tlsMismatch = isLikelyTlsOverHttpResponse(err) && url.startsWith('https:');
+      const alt8080 = tlsMismatch ? httpsToHttpPortSameResource(url, 8080) : null;
+      if (alt8080 && alt8080 !== url) {
+        this.log.warn(
+          `${c.yellow}🔁${c.reset} JMAP session HTTPS falhou com padrão TLS/HTTP misto; a tentar ${c.cyan}${alt8080}${c.reset}…`,
+        );
+        try {
+          res = await fetch(alt8080, {
+            method: 'GET',
+            headers: { Authorization: this.authHeader(creds) },
+          });
+        } catch (retryErr) {
+          const retryCause = errorChainDetail(retryErr);
+          const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+          this.log.error(
+            `${c.red}❌${c.reset} JMAP session retry em :8080 falhou${retryCause ? ` (${retryCause})` : ''}: ${retryMsg}`,
+          );
+          throw new BadGatewayException(
+            `JMAP session indisponível: ${retryMsg}${retryCause ? ` — ${retryCause}` : ''}`,
+          );
+        }
+      } else {
       const cause = errorChainDetail(err);
       const msg = err instanceof Error ? err.message : String(err);
       this.log.error(
         `${c.red}❌${c.reset} JMAP session fetch falhou${cause ? ` (${cause})` : ''}: ${msg}`,
       );
       throw new BadGatewayException(`JMAP session indisponível: ${msg}${cause ? ` — ${cause}` : ''}`);
+      }
     }
     if (!res.ok) {
       const text = await res.text();
@@ -158,15 +233,14 @@ export class JmapClient {
     return accountId;
   }
 
-  private async invoke(
+  private async postJmap(
     session: JmapSession,
     creds: JmapCredentials,
+    using: string[],
     calls: JmapInvocation[],
+    opts?: { tlsMismatchRetried?: boolean },
   ): Promise<JmapInvocation[]> {
-    const body = {
-      using: [CORE_CAP, MAIL_CAP],
-      methodCalls: calls,
-    };
+    const body = { using, methodCalls: calls };
     let res: Response;
     try {
       res = await fetch(session.apiUrl, {
@@ -180,6 +254,21 @@ export class JmapClient {
     } catch (err) {
       const cause = errorChainDetail(err);
       const msg = err instanceof Error ? err.message : String(err);
+      const canRetryHttp =
+        !opts?.tlsMismatchRetried &&
+        isLikelyTlsOverHttpResponse(err) &&
+        session.apiUrl.startsWith('https:');
+      const httpAlt8080 = canRetryHttp ? httpsToHttpPortSameResource(session.apiUrl, 8080) : null;
+      const httpAlt = canRetryHttp ? httpsToHttpSameResource(session.apiUrl) : null;
+      const fallbackTarget = httpAlt8080 ?? httpAlt;
+      if (fallbackTarget && fallbackTarget !== session.apiUrl) {
+        this.log.warn(
+          `${c.yellow}🔁${c.reset} JMAP POST em HTTPS rebentou com TLS inesperado (${c.red}${cause || msg}${c.reset}). ` +
+            `Muito comum: nginx a servir HTTP nesse path. A tentar ${c.cyan}${fallbackTarget}${c.reset} (uma vez)…`,
+        );
+        session.apiUrl = this.normalizeJmapResourceHref(fallbackTarget);
+        return this.postJmap(session, creds, using, calls, { tlsMismatchRetried: true });
+      }
       this.log.error(
         `${c.red}❌${c.reset} JMAP fetch POST falhou → ${c.cyan}${session.apiUrl}${c.reset}${cause ? ` (${cause})` : ''}: ${msg}`,
       );
@@ -194,6 +283,29 @@ export class JmapClient {
     }
     const data = (await res.json()) as JmapResponse;
     return data.methodResponses;
+  }
+
+  private async invoke(
+    session: JmapSession,
+    creds: JmapCredentials,
+    calls: JmapInvocation[],
+  ): Promise<JmapInvocation[]> {
+    return this.postJmap(session, creds, [CORE_CAP, MAIL_CAP], calls);
+  }
+
+  /**
+   * Chamadas de gestão Stalwart (x:Domain/*, etc.) — mesma sessão JMAP que o WebAdmin/CLI.
+   * Requer credenciais com permissões sysDomain* (ex.: administrador).
+   */
+  async invokeStalwartManagement(
+    creds: JmapCredentials,
+    calls: JmapInvocation[],
+  ): Promise<JmapInvocation[]> {
+    const session = await this.getSession(creds);
+    this.log.debug(
+      `${c.magenta}🛰️${c.reset} Stalwart management JMAP (${calls.length} chamada(s)) → ${c.cyan}${session.apiUrl}${c.reset}`,
+    );
+    return this.postJmap(session, creds, [CORE_CAP, STALWART_CAP, PRINCIPALS_CAP], calls);
   }
 
   async listMailboxes(creds: JmapCredentials): Promise<JmapMailboxSummary[]> {

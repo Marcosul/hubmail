@@ -5,7 +5,9 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DomainStatus, MailCredentialKind } from '@prisma/client';
+import { JmapClient, type JmapCredentials } from './jmap.client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CryptoService } from './crypto.service';
 
@@ -14,12 +16,13 @@ const c = {
   green: '\x1b[32m',
   magenta: '\x1b[35m',
   cyan: '\x1b[36m',
+  yellow: '\x1b[33m',
 };
 
 export interface CreateMailboxDto {
   address: string;
   displayName?: string;
-  password: string;
+  password?: string;
   username?: string;
 }
 
@@ -30,7 +33,171 @@ export class MailboxesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly crypto: CryptoService,
+    private readonly config: ConfigService,
+    private readonly jmap: JmapClient,
   ) {}
+
+  private managementCreds(): JmapCredentials | null {
+    const username = this.config.get<string>('STALWART_MANAGEMENT_EMAIL')?.trim();
+    const password = this.config.get<string>('STALWART_MANAGEMENT_PASSWORD')?.trim();
+    if (!username || !password) return null;
+    return { username, password };
+  }
+
+  private extractSetError(setResult: unknown): string | undefined {
+    if (!setResult || typeof setResult !== 'object') return undefined;
+    const o = setResult as {
+      notCreated?: Record<string, Record<string, unknown>>;
+      notUpdated?: Record<string, Record<string, unknown>>;
+    };
+    const nc = o.notCreated ? Object.values(o.notCreated)[0] : undefined;
+    const nu = o.notUpdated ? Object.values(o.notUpdated)[0] : undefined;
+    const ncMsg =
+      (typeof nc?.description === 'string' && nc.description) ||
+      (typeof nc?.detail === 'string' && nc.detail) ||
+      (typeof nc?.title === 'string' && nc.title) ||
+      (typeof nc?.type === 'string' && nc.type) ||
+      undefined;
+    const nuMsg =
+      (typeof nu?.description === 'string' && nu.description) ||
+      (typeof nu?.detail === 'string' && nu.detail) ||
+      (typeof nu?.title === 'string' && nu.title) ||
+      (typeof nu?.type === 'string' && nu.type) ||
+      undefined;
+    return ncMsg ?? nuMsg ?? undefined;
+  }
+
+  private extractCreatedId(payload: unknown, createKey: string): string | undefined {
+    if (!payload || typeof payload !== 'object') return undefined;
+    const created = (payload as { created?: Record<string, unknown> }).created;
+    const entry = created?.[createKey];
+    if (typeof entry === 'string') return entry;
+    if (entry && typeof entry === 'object') {
+      const id = (entry as { id?: unknown }).id;
+      if (typeof id === 'string') return id;
+    }
+    return undefined;
+  }
+
+  private compactPayload(payload: unknown): string {
+    try {
+      return JSON.stringify(payload);
+    } catch {
+      return '[unserializable]';
+    }
+  }
+
+  private async stalwartFindDomainId(creds: JmapCredentials, domainName: string): Promise<string | null> {
+    const responses = await this.jmap.invokeStalwartManagement(creds, [
+      ['x:Domain/query', { filter: { name: domainName }, limit: 1 }, 'dq1'],
+    ]);
+    const qr = responses.find((r) => r[0] === 'x:Domain/query')?.[1] as { ids?: string[] };
+    return qr?.ids?.[0] ?? null;
+  }
+
+  private async stalwartFindAccountByEmail(
+    creds: JmapCredentials,
+    emailAddress: string,
+  ): Promise<{ id: string; name?: string; emailAddress?: string } | null> {
+    const responses = await this.jmap.invokeStalwartManagement(creds, [
+      [
+        'x:Account/get',
+        {
+          ids: null,
+        },
+        'q1',
+      ],
+    ]);
+    const list = (responses.find((r) => r[2] === 'q1')?.[1] as {
+      list?: Array<{ id?: string; name?: string; emailAddress?: string }>;
+    })?.list ?? [];
+    const target = emailAddress.toLowerCase();
+    const exact = list.find((a) => (a.emailAddress ?? '').toLowerCase() === target);
+    if (!exact?.id) return null;
+    return { id: exact.id, name: exact.name, emailAddress: exact.emailAddress };
+  }
+
+  private async ensureStalwartMailboxSecret(
+    creds: JmapCredentials,
+    emailAddress: string,
+    principalName: string,
+    displayName?: string,
+  ): Promise<string> {
+    const [, domainName = ''] = emailAddress.split('@');
+    const domainId = await this.stalwartFindDomainId(creds, domainName);
+    if (!domainId) {
+      throw new BadRequestException(
+        `Domínio ${domainName} não encontrado no Stalwart. Crie/sincronize o domínio antes da inbox.`,
+      );
+    }
+
+    let accountId = (await this.stalwartFindAccountByEmail(creds, emailAddress))?.id;
+    if (!accountId) {
+      const createKey = 'hubmailMailbox';
+      const setRes = await this.jmap.invokeStalwartManagement(creds, [
+        [
+          'x:Account/set',
+          {
+            create: {
+              [createKey]: {
+                '@type': 'User',
+                name: principalName,
+                domainId,
+                description: displayName?.trim() || undefined,
+              },
+            },
+          },
+          's1',
+        ],
+      ]);
+      const payload = setRes.find((r) => r[0] === 'x:Account/set')?.[1];
+      accountId = this.extractCreatedId(payload, createKey);
+      const err = this.extractSetError(payload);
+      if (!accountId || err) {
+        throw new BadRequestException(
+          `Falha ao criar conta no Stalwart: ${err ?? 'create_failed'} | payload=${this.compactPayload(payload)}`,
+        );
+      }
+      this.log.log(
+        `${c.green}✨${c.reset} conta criada no Stalwart para ${c.magenta}${emailAddress}${c.reset} (id ${accountId})`,
+      );
+    } else {
+      this.log.log(
+        `${c.cyan}♻️${c.reset} conta já existente no Stalwart para ${c.magenta}${emailAddress}${c.reset} (id ${accountId})`,
+      );
+    }
+
+    const appPwdKey = 'hubmailAppPassword';
+    const pwdRes = await this.jmap.invokeStalwartManagement(creds, [
+      [
+        'x:AppPassword/set',
+        {
+          accountId,
+          create: {
+            [appPwdKey]: {
+              description: `HubMail ${emailAddress}`,
+            },
+          },
+        },
+        'p1',
+      ],
+    ]);
+    const pwdPayload = pwdRes.find((r) => r[0] === 'x:AppPassword/set')?.[1] as {
+      created?: Record<string, { id?: string; secret?: string }>;
+    };
+    const created = pwdPayload?.created?.[appPwdKey];
+    const generatedSecret = created?.secret;
+    const pwdErr = this.extractSetError(pwdPayload);
+    if (!generatedSecret || pwdErr) {
+      throw new BadRequestException(
+        `Falha ao gerar app password no Stalwart: ${pwdErr ?? 'create_failed'} | payload=${this.compactPayload(pwdPayload)}`,
+      );
+    }
+    this.log.log(
+      `${c.green}🔐${c.reset} app password criada no Stalwart para ${c.magenta}${emailAddress}${c.reset}`,
+    );
+    return generatedSecret;
+  }
 
   async list(workspaceId: string) {
     const mailboxes = await this.prisma.mailbox.findMany({
@@ -62,20 +229,113 @@ export class MailboxesService {
   async resolveCredentials(workspaceId: string, mailboxId: string) {
     const mailbox = await this.getOrThrow(workspaceId, mailboxId);
     if (!mailbox.credential) {
-      throw new BadRequestException('Mailbox sem credenciais; configure em settings');
+      const repaired = await this.repairMissingCredential(workspaceId, mailbox);
+      if (!repaired) {
+        throw new BadRequestException('Mailbox sem credenciais; configure em settings');
+      }
+      return repaired;
     }
     const password = this.crypto.decrypt(mailbox.credential.secretRef);
+    const storedUsername = mailbox.credential.username?.trim() || '';
+    const normalizedUsername = storedUsername.includes('@') ? storedUsername : mailbox.address;
+    if (normalizedUsername !== storedUsername) {
+      this.log.warn(
+        `${c.yellow}🧭${c.reset} username de credencial ajustado para email completo em runtime: ` +
+          `${c.magenta}${storedUsername || '(vazio)'}${c.reset} → ${c.magenta}${normalizedUsername}${c.reset}`,
+      );
+    }
     return {
       mailbox,
       credentials: {
-        username: mailbox.credential.username ?? mailbox.address,
+        username: normalizedUsername,
         password,
+      },
+    };
+  }
+
+  private async repairMissingCredential(
+    workspaceId: string,
+    mailbox: Awaited<ReturnType<MailboxesService['getOrThrow']>>,
+  ): Promise<
+    | {
+        mailbox: Awaited<ReturnType<MailboxesService['getOrThrow']>>;
+        credentials: { username: string; password: string };
+      }
+    | null
+  > {
+    const mgmt = this.managementCreds();
+    if (!mgmt) {
+      this.log.warn(
+        `${c.yellow}🩹${c.reset} sem STALWART_MANAGEMENT_* para autorreparar credencial de ${c.magenta}${mailbox.address}${c.reset}`,
+      );
+      return null;
+    }
+    const account = await this.stalwartFindAccountByEmail(mgmt, mailbox.address);
+    if (!account?.id) {
+      this.log.warn(
+        `${c.yellow}🩹${c.reset} conta não encontrada no Stalwart para autorreparar ${c.magenta}${mailbox.address}${c.reset}`,
+      );
+      return null;
+    }
+
+    const appPwdKey = 'hubmailAutoRepair';
+    const pwdRes = await this.jmap.invokeStalwartManagement(mgmt, [
+      [
+        'x:AppPassword/set',
+        {
+          accountId: account.id,
+          create: {
+            [appPwdKey]: {
+              description: `HubMail auto-repair ${mailbox.address}`,
+            },
+          },
+        },
+        'rp1',
+      ],
+    ]);
+    const payload = pwdRes.find((r) => r[0] === 'x:AppPassword/set')?.[1] as {
+      created?: Record<string, { secret?: string }>;
+    };
+    const secret = payload?.created?.[appPwdKey]?.secret;
+    const err = this.extractSetError(payload);
+    if (!secret || err) {
+      this.log.warn(
+        `${c.yellow}🩹${c.reset} falha ao gerar app password de autorreparo para ${c.magenta}${mailbox.address}${c.reset}: ${err ?? 'create_failed'}`,
+      );
+      return null;
+    }
+
+    const secretRef = this.crypto.encrypt(secret);
+    const credential = await this.prisma.mailCredential.create({
+      data: {
+        mailboxId: mailbox.id,
+        kind: MailCredentialKind.APP_PASSWORD,
+        username: mailbox.address,
+        secretRef,
+      },
+    });
+    const updated = await this.prisma.mailbox.update({
+      where: { id: mailbox.id },
+      data: { credentialId: credential.id },
+      include: { domain: true, credential: true },
+    });
+    this.log.log(
+      `${c.green}🩹${c.reset} credencial autorreparada para ${c.magenta}${mailbox.address}${c.reset}`,
+    );
+    return {
+      mailbox: updated,
+      credentials: {
+        username: mailbox.address,
+        password: secret,
       },
     };
   }
 
   async create(workspaceId: string, actor: string, dto: CreateMailboxDto) {
     const address = dto.address.trim().toLowerCase();
+    const cleanDisplayName = dto.displayName?.trim() || undefined;
+    const principalName =
+      dto.username?.trim().toLowerCase().replace(/\s+/g, '') || address.split('@')[0] || 'mailbox';
     if (!address.includes('@')) {
       throw new BadRequestException('Endereço de email inválido');
     }
@@ -98,7 +358,19 @@ export class MailboxesService {
       },
     });
 
-    const secretRef = this.crypto.encrypt(dto.password);
+    const mgmt = this.managementCreds();
+    if (!mgmt) {
+      throw new BadRequestException(
+        'Defina STALWART_MANAGEMENT_EMAIL/PASSWORD para provisionar credenciais automaticamente.',
+      );
+    }
+    const password = await this.ensureStalwartMailboxSecret(
+      mgmt,
+      address,
+      principalName,
+      cleanDisplayName,
+    );
+    const secretRef = this.crypto.encrypt(password);
 
     const mailbox = await this.prisma.$transaction(async (tx) => {
       const created = await tx.mailbox.create({
@@ -106,7 +378,7 @@ export class MailboxesService {
           workspaceId,
           domainId: domain.id,
           address,
-          displayName: dto.displayName,
+          displayName: cleanDisplayName,
         },
       });
       const credential = await tx.mailCredential.create({
@@ -114,7 +386,7 @@ export class MailboxesService {
           mailboxId: created.id,
           kind: MailCredentialKind.APP_PASSWORD,
           secretRef,
-          username: dto.username ?? address,
+          username: address,
         },
       });
       const linked = await tx.mailbox.update({
@@ -138,6 +410,14 @@ export class MailboxesService {
     this.log.log(
       `${c.green}📬${c.reset} mailbox ${c.magenta}${mailbox.address}${c.reset} criada por ${c.cyan}${actor}${c.reset}`,
     );
+    this.log.log(
+      `${c.cyan}🔐${c.reset} credencial ${dto.password ? 'fornecida pelo cliente' : 'gerada automaticamente'} para ${c.magenta}${mailbox.address}${c.reset}`,
+    );
+    if (cleanDisplayName) {
+      this.log.log(
+        `${c.cyan}🏷️${c.reset} nome exibido definido para ${c.magenta}${mailbox.address}${c.reset}: "${cleanDisplayName}"`,
+      );
+    }
 
     return {
       id: mailbox.id,
@@ -158,12 +438,15 @@ export class MailboxesService {
   ) {
     const mailbox = await this.getOrThrow(workspaceId, mailboxId);
     const secretRef = this.crypto.encrypt(newPassword);
+    const normalizedUsername = (username ?? mailbox.credential?.username ?? mailbox.address).includes('@')
+      ? (username ?? mailbox.credential?.username ?? mailbox.address)
+      : mailbox.address;
     if (mailbox.credentialId) {
       await this.prisma.mailCredential.update({
         where: { id: mailbox.credentialId },
         data: {
           secretRef,
-          username: username ?? mailbox.credential?.username ?? mailbox.address,
+          username: normalizedUsername,
           rotatedAt: new Date(),
         },
       });
@@ -173,7 +456,7 @@ export class MailboxesService {
           mailboxId: mailbox.id,
           kind: MailCredentialKind.APP_PASSWORD,
           secretRef,
-          username: username ?? mailbox.address,
+          username: normalizedUsername,
         },
       });
       await this.prisma.mailbox.update({
@@ -193,6 +476,29 @@ export class MailboxesService {
     });
     this.log.log(
       `${c.green}🔑${c.reset} credencial rodada para ${c.magenta}${mailbox.address}${c.reset}`,
+    );
+    return { ok: true };
+  }
+
+  async invalidateCredential(
+    workspaceId: string,
+    mailboxId: string,
+    reason: string,
+  ) {
+    const mailbox = await this.getOrThrow(workspaceId, mailboxId);
+    if (!mailbox.credentialId) return { ok: true };
+
+    const credentialId = mailbox.credentialId;
+    await this.prisma.$transaction([
+      this.prisma.mailbox.update({
+        where: { id: mailbox.id },
+        data: { credentialId: null },
+      }),
+      this.prisma.mailCredential.deleteMany({ where: { id: credentialId } }),
+    ]);
+
+    this.log.warn(
+      `${c.yellow}🧯${c.reset} credencial invalidada para ${c.magenta}${mailbox.address}${c.reset} (motivo: ${reason})`,
     );
     return { ok: true };
   }

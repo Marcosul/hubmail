@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { MoreHorizontal } from "lucide-react";
+import { EllipsisVertical, KeyRound, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { InboxTableActionsCell } from "@/components/inboxes/inbox-table-actions-cell";
 import { InboxTableRow } from "@/components/inboxes/inbox-table-row";
-import { useMailboxes } from "@/hooks/use-mail";
+import { useDeleteMailbox, useMailboxes, useRotateMailboxCredential } from "@/hooks/use-mail";
 import { getLocaleDateFormat, useI18n } from "@/i18n/client";
 import type { AppLocale } from "@/i18n/config";
 
@@ -20,6 +21,84 @@ export default function InboxesPage() {
   const { locale, messages } = useI18n();
   const copy = messages.inboxes;
   const { data: mailboxes, isLoading, isError } = useMailboxes();
+  const rotateCredential = useRotateMailboxCredential();
+  const removeMailbox = useDeleteMailbox();
+  const [openMenu, setOpenMenu] = useState<{ id: string; top: number; left: number } | null>(null);
+  const [editingMailbox, setEditingMailbox] = useState<{ id: string; address: string } | null>(null);
+  const [credentialUsername, setCredentialUsername] = useState("");
+  const [credentialPassword, setCredentialPassword] = useState("");
+  const [dialogError, setDialogError] = useState<string | null>(null);
+  const normalizedPassword = credentialPassword.trim();
+  const canSubmitCredential = Boolean(editingMailbox) && normalizedPassword.length >= 6;
+
+  function openCredentialDialog(mailbox: { id: string; address: string }) {
+    setEditingMailbox(mailbox);
+    setCredentialUsername(mailbox.address);
+    setCredentialPassword("");
+    setDialogError(null);
+    setOpenMenu(null);
+  }
+
+  useEffect(() => {
+    if (!openMenu) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest("[data-inbox-actions-menu]")) return;
+      if (target.closest("[data-inbox-actions-trigger]")) return;
+      setOpenMenu(null);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenMenu(null);
+    };
+
+    const closeOnViewportChange = () => setOpenMenu(null);
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    window.addEventListener("scroll", closeOnViewportChange, true);
+    window.addEventListener("resize", closeOnViewportChange);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+      window.removeEventListener("scroll", closeOnViewportChange, true);
+      window.removeEventListener("resize", closeOnViewportChange);
+    };
+  }, [openMenu]);
+
+  async function submitCredentialUpdate() {
+    if (!editingMailbox) return;
+    if (normalizedPassword.length < 6) {
+      setDialogError(copy.passwordMinSize);
+      return;
+    }
+    try {
+      await rotateCredential.mutateAsync({
+        mailboxId: editingMailbox.id,
+        username: credentialUsername.trim() || editingMailbox.address,
+        password: normalizedPassword,
+      });
+      setEditingMailbox(null);
+      setCredentialUsername("");
+      setCredentialPassword("");
+      setDialogError(null);
+    } catch (error) {
+      setDialogError(error instanceof Error ? error.message : copy.rotateCredentialError);
+    }
+  }
+
+  async function handleDelete(mailbox: { id: string; address: string }) {
+    const confirmed = window.confirm(copy.deleteMailboxConfirm.replace("{address}", mailbox.address));
+    if (!confirmed) return;
+    try {
+      await removeMailbox.mutateAsync({ mailboxId: mailbox.id });
+      setOpenMenu(null);
+    } catch {
+      window.alert(copy.deleteMailboxError);
+    }
+  }
 
   return (
     <DashboardShell
@@ -99,13 +178,52 @@ export default function InboxesPage() {
                     {formatDate(row.createdAt, locale)}
                   </td>
                   <InboxTableActionsCell>
-                    <button
-                      type="button"
-                      className="rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-white/10"
-                      aria-label={messages.common.actions}
-                    >
-                      <MoreHorizontal className="size-4" />
-                    </button>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        data-inbox-actions-trigger
+                        className="rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-white/10"
+                        aria-label={messages.common.actions}
+                        onClick={(event) => {
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          const menuWidth = 192;
+                          const left = Math.max(
+                            8,
+                            Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8),
+                          );
+                          const top = rect.bottom + 6;
+                          setOpenMenu((curr) =>
+                            curr?.id === row.id ? null : { id: row.id, top, left },
+                          );
+                        }}
+                      >
+                        <EllipsisVertical className="size-4" />
+                      </button>
+                      {openMenu?.id === row.id ? (
+                        <div
+                          data-inbox-actions-menu
+                          className="fixed z-40 min-w-48 rounded-md border border-neutral-200 bg-white p-1 shadow-lg dark:border-hub-border dark:bg-[#111]"
+                          style={{ top: openMenu.top, left: openMenu.left }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => openCredentialDialog({ id: row.id, address: row.address })}
+                            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-white/10"
+                          >
+                            <KeyRound className="size-4" />
+                            {copy.configureCredentials}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete({ id: row.id, address: row.address })}
+                            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
+                          >
+                            <Trash2 className="size-4" />
+                            {copy.delete}
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
                   </InboxTableActionsCell>
                 </InboxTableRow>
               ))
@@ -129,6 +247,77 @@ export default function InboxesPage() {
           </span>
         </div>
       </div>
+      {editingMailbox ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 p-4">
+          <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white p-5 shadow-xl dark:border-hub-border dark:bg-[#111]">
+            <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+              {copy.configureCredentials}
+            </h3>
+            <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+              {editingMailbox.address}
+            </p>
+            <form
+              className="mt-4 space-y-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitCredentialUpdate();
+              }}
+            >
+              <label className="block">
+                <span className="mb-1 block text-xs text-neutral-600 dark:text-neutral-300">
+                  {copy.credentialUsername}
+                </span>
+                <input
+                  value={credentialUsername}
+                  onChange={(event) => setCredentialUsername(event.target.value)}
+                  className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-hub-border dark:bg-[#171717] dark:text-neutral-100"
+                  placeholder="contato@dominio.com"
+                  autoComplete="username"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs text-neutral-600 dark:text-neutral-300">
+                  {copy.credentialPassword}
+                </span>
+                <input
+                  type="password"
+                  value={credentialPassword}
+                  onChange={(event) => {
+                    setCredentialPassword(event.target.value);
+                    if (dialogError) setDialogError(null);
+                  }}
+                  className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-hub-border dark:bg-[#171717] dark:text-neutral-100"
+                  placeholder={copy.credentialPasswordPlaceholder}
+                  minLength={6}
+                  required
+                  autoComplete="new-password"
+                />
+              </label>
+              {dialogError ? (
+                <p className="text-xs text-red-600 dark:text-red-400">{dialogError}</p>
+              ) : (
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">{copy.passwordMinSize}</p>
+              )}
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingMailbox(null)}
+                  className="rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50 dark:border-hub-border dark:text-neutral-300 dark:hover:bg-white/5"
+                >
+                  {messages.common.cancel}
+                </button>
+                <button
+                  type="submit"
+                  disabled={!canSubmitCredential || rotateCredential.isPending}
+                  className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-neutral-900"
+                >
+                  {rotateCredential.isPending ? copy.savingCredential : messages.common.save}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </DashboardShell>
   );
 }

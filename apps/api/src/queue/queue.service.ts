@@ -7,6 +7,7 @@ import {
   type MailIngestJob,
   type MailSendRetryJob,
   type QueueName,
+  type StalwartDomainProvisionJob,
   type WebhookDispatchJob,
 } from './queue.names';
 
@@ -21,6 +22,13 @@ const DEFAULT_JOB_OPTS: JobsOptions = {
   removeOnFail: { age: 7 * 24 * 3600, count: 5000 },
   attempts: 5,
   backoff: { type: 'exponential', delay: 2000 },
+};
+
+const STALWART_DOMAIN_JOB_OPTS: JobsOptions = {
+  removeOnComplete: { age: 24 * 3600, count: 5000 },
+  removeOnFail: { age: 14 * 24 * 3600, count: 10_000 },
+  attempts: 10,
+  backoff: { type: 'exponential', delay: 3000 },
 };
 
 @Injectable()
@@ -67,6 +75,25 @@ export class QueueService implements OnModuleDestroy {
     const q = this.getQueue(QUEUE_NAMES.WEBHOOK_DISPATCH);
     if (!q) return;
     await q.add('dispatch', payload, opts);
+  }
+
+  /**
+   * Agenda criação/atualização do domínio no Stalwart (JMAP Management).
+   * `jobId` deduplica reenvios para o mesmo domainId enquanto o job está na fila.
+   */
+  async enqueueStalwartDomainProvision(
+    payload: StalwartDomainProvisionJob,
+    opts?: JobsOptions,
+  ): Promise<void> {
+    const q = this.getQueue(QUEUE_NAMES.STALWART_DOMAIN_PROVISION);
+    if (!q) return;
+    const merged: JobsOptions = {
+      ...STALWART_DOMAIN_JOB_OPTS,
+      ...opts,
+      // BullMQ rejeita ":" em custom job id.
+      jobId: `domain-${payload.domainId}`,
+    };
+    await q.add('provision', payload, merged);
   }
 
   isEnabled(): boolean {

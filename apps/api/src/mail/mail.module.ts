@@ -21,6 +21,6 @@ import { SmtpService } from './smtp.service';
     MailboxesService,
     MailService,
   ],
-  exports: [MailService, MailboxesService, CryptoService, SmtpService],
+  exports: [MailService, MailboxesService, CryptoService, SmtpService, JmapClient],
 })
 export class MailModule {}

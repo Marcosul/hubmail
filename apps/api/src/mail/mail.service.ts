@@ -52,9 +52,46 @@ export class MailService {
     private readonly sanitizer: HtmlSanitizerService,
   ) {}
 
+  private isJmapAuthError(error: unknown): boolean {
+    const msg = (error instanceof Error ? error.message : String(error ?? '')).toLowerCase();
+    return (
+      msg.includes('jmap session falhou: 401') ||
+      msg.includes('jmap call falhou: 401') ||
+      (msg.includes('unauthorized') && msg.includes('jmap'))
+    );
+  }
+
+  private isSmtpAuthError(error: unknown): boolean {
+    const msg = (error instanceof Error ? error.message : String(error ?? '')).toLowerCase();
+    return (
+      msg.includes('535') ||
+      msg.includes('authentication credentials invalid') ||
+      msg.includes('invalid login') ||
+      msg.includes('auth') && msg.includes('invalid')
+    );
+  }
+
+  private async withJmapGuard<T>(
+    workspaceId: string,
+    mailboxId: string,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await run();
+    } catch (error) {
+      if (!this.isJmapAuthError(error)) throw error;
+      await this.mailboxes.invalidateCredential(workspaceId, mailboxId, 'jmap_401');
+      throw new BadRequestException(
+        'Credencial da mailbox inválida/expirada. Reconfigure a credencial para continuar.',
+      );
+    }
+  }
+
   async listMailboxes(workspaceId: string, mailboxId: string): Promise<MailFolderSummary[]> {
     const { credentials } = await this.mailboxes.resolveCredentials(workspaceId, mailboxId);
-    const folders = await this.jmap.listMailboxes(credentials);
+    const folders = await this.withJmapGuard(workspaceId, mailboxId, () =>
+      this.jmap.listMailboxes(credentials),
+    );
     return folders.map((f) => ({
       id: f.id,
       name: f.name,
@@ -72,12 +109,14 @@ export class MailService {
     opts: { folderId?: string; cursor?: number; limit?: number; search?: string },
   ): Promise<ThreadPage> {
     const { credentials } = await this.mailboxes.resolveCredentials(workspaceId, mailboxId);
-    const { emails, total, nextCursor } = await this.jmap.listThreads(credentials, {
-      mailboxId: opts.folderId,
-      cursor: opts.cursor,
-      limit: opts.limit,
-      search: opts.search,
-    });
+    const { emails, total, nextCursor } = await this.withJmapGuard(workspaceId, mailboxId, () =>
+      this.jmap.listThreads(credentials, {
+        mailboxId: opts.folderId,
+        cursor: opts.cursor,
+        limit: opts.limit,
+        search: opts.search,
+      }),
+    );
     const threads: ThreadSummary[] = emails.map((e) => {
       const labels = Object.keys(e.keywords ?? {}).filter((k) => !k.startsWith('$'));
       const flags = Object.keys(e.keywords ?? {}).filter((k) => k.startsWith('$'));
@@ -103,7 +142,9 @@ export class MailService {
 
   async getThread(workspaceId: string, mailboxId: string, threadId: string) {
     const { credentials } = await this.mailboxes.resolveCredentials(workspaceId, mailboxId);
-    const result = await this.jmap.getThread(credentials, threadId);
+    const result = await this.withJmapGuard(workspaceId, mailboxId, () =>
+      this.jmap.getThread(credentials, threadId),
+    );
     if (!result) throw new NotFoundException('Thread não encontrada');
     return {
       id: result.thread.id,
@@ -114,7 +155,9 @@ export class MailService {
 
   async getMessageRaw(workspaceId: string, mailboxId: string, emailId: string): Promise<EmailMessage> {
     const { credentials } = await this.mailboxes.resolveCredentials(workspaceId, mailboxId);
-    const email = await this.jmap.getEmail(credentials, emailId);
+    const email = await this.withJmapGuard(workspaceId, mailboxId, () =>
+      this.jmap.getEmail(credentials, emailId),
+    );
     if (!email) throw new NotFoundException('Email não encontrado');
     return this.mapEmail(email);
   }
@@ -134,14 +177,18 @@ export class MailService {
       mailboxIds = { [patch.moveToMailbox]: true };
     }
     if (patch.delete) {
-      await this.jmap.patchEmail(credentials, emailId, { destroy: true });
+      await this.withJmapGuard(workspaceId, patch.mailboxId, () =>
+        this.jmap.patchEmail(credentials, emailId, { destroy: true }),
+      );
       await this.auditMutation(workspaceId, 'mail.message.deleted', emailId);
       return { ok: true };
     }
     if (!Object.keys(keywords).length && !mailboxIds) {
       throw new BadRequestException('Nada para atualizar');
     }
-    await this.jmap.patchEmail(credentials, emailId, { keywords, mailboxIds });
+    await this.withJmapGuard(workspaceId, patch.mailboxId, () =>
+      this.jmap.patchEmail(credentials, emailId, { keywords, mailboxIds }),
+    );
     await this.auditMutation(workspaceId, 'mail.message.patched', emailId, { keywords, mailboxIds });
     return { ok: true };
   }
@@ -151,10 +198,9 @@ export class MailService {
     actor: string,
     dto: SendMailDto,
   ): Promise<SendMailResult> {
-    const { mailbox, credentials } = await this.mailboxes.resolveCredentials(
-      workspaceId,
-      dto.mailboxId,
-    );
+    const mailbox = await this.mailboxes.getOrThrow(workspaceId, dto.mailboxId);
+    const resolved = await this.mailboxes.resolveCredentials(workspaceId, dto.mailboxId);
+    const credentials = resolved.credentials;
 
     if (!dto.html && !dto.text) {
       throw new BadRequestException('Email precisa de conteúdo html ou text');
@@ -235,6 +281,9 @@ export class MailService {
       return { id: record.id, status: OutgoingMessageStatus.SENT, createdAt: record.createdAt };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (this.isSmtpAuthError(error)) {
+        await this.mailboxes.invalidateCredential(workspaceId, dto.mailboxId, 'smtp_535');
+      }
       await this.prisma.outgoingMessage.update({
         where: { id: record.id },
         data: {
@@ -243,6 +292,11 @@ export class MailService {
           attempts: { increment: 1 },
         },
       });
+      if (this.isSmtpAuthError(error)) {
+        throw new BadRequestException(
+          'Credencial SMTP inválida/expirada para esta mailbox. Reconfigure a credencial e tente novamente.',
+        );
+      }
       throw error;
     }
   }
