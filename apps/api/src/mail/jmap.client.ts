@@ -90,8 +90,18 @@ function httpsToHttpPortSameResource(apiUrl: string, port: number): string | nul
 export class JmapClient {
   private readonly log = new Logger(JmapClient.name);
   private readonly sessionCache = new Map<string, { session: JmapSession; fetchedAt: number }>();
+  private readonly apiHttpHintByHost = new Map<string, string>();
 
   constructor(private readonly config: ConfigService) {}
+
+  private hostKey(url: string): string | null {
+    try {
+      const u = new URL(url);
+      return u.hostname.toLowerCase();
+    } catch {
+      return null;
+    }
+  }
 
   private sessionUrl(): string {
     const url =
@@ -217,6 +227,16 @@ export class JmapClient {
       primaryAccounts: raw.primaryAccounts,
       accounts: raw.accounts ?? {},
     };
+    if (!apiOverride) {
+      const key = this.hostKey(session.apiUrl);
+      const hinted = key ? this.apiHttpHintByHost.get(key) : null;
+      if (hinted) {
+        session.apiUrl = this.normalizeJmapResourceHref(hinted);
+        this.log.debug(
+          `${c.yellow}🧠${c.reset} reuso de hint HTTP para JMAP API em ${c.cyan}${key}${c.reset} → ${c.cyan}${session.apiUrl}${c.reset}`,
+        );
+      }
+    }
     if (apiOverride) {
       this.log.debug(`${c.cyan}⚙️${c.reset} JMAP apiUrl fixo via STALWART_JMAP_API_URL → ${session.apiUrl}`);
     }
@@ -262,6 +282,10 @@ export class JmapClient {
       const httpAlt = canRetryHttp ? httpsToHttpSameResource(session.apiUrl) : null;
       const fallbackTarget = httpAlt8080 ?? httpAlt;
       if (fallbackTarget && fallbackTarget !== session.apiUrl) {
+        const key = this.hostKey(session.apiUrl);
+        if (key) {
+          this.apiHttpHintByHost.set(key, fallbackTarget);
+        }
         this.log.warn(
           `${c.yellow}🔁${c.reset} JMAP POST em HTTPS rebentou com TLS inesperado (${c.red}${cause || msg}${c.reset}). ` +
             `Muito comum: nginx a servir HTTP nesse path. A tentar ${c.cyan}${fallbackTarget}${c.reset} (uma vez)…`,

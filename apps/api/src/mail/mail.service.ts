@@ -40,9 +40,14 @@ function firstAddress(list?: JmapEmail['from']): MailAddress {
   return first ?? { email: '' };
 }
 
+function stripHtml(input: string): string {
+  return input.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 @Injectable()
 export class MailService {
   private readonly log = new Logger(MailService.name);
+  private static readonly OUTGOING_THREAD_PREFIX = 'outgoing:';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -108,7 +113,58 @@ export class MailService {
     mailboxId: string,
     opts: { folderId?: string; cursor?: number; limit?: number; search?: string },
   ): Promise<ThreadPage> {
-    const { credentials } = await this.mailboxes.resolveCredentials(workspaceId, mailboxId);
+    const { mailbox, credentials } = await this.mailboxes.resolveCredentials(workspaceId, mailboxId);
+    const folders = await this.withJmapGuard(workspaceId, mailboxId, () =>
+      this.jmap.listMailboxes(credentials),
+    );
+    const selectedFolder = folders.find((f) => f.id === opts.folderId);
+    const isSentFolder = selectedFolder?.role === 'sent';
+    if (isSentFolder) {
+      const limit = Math.min(Math.max(opts.limit ?? 30, 1), 100);
+      const position = Math.max(opts.cursor ?? 0, 0);
+      const search = opts.search?.trim();
+      const where = {
+        workspaceId,
+        mailboxId: mailbox.id,
+        status: OutgoingMessageStatus.SENT,
+        ...(search
+          ? {
+              OR: [
+                { subject: { contains: search, mode: 'insensitive' as const } },
+                { toAddrs: { has: search } },
+              ],
+            }
+          : {}),
+      };
+      const [total, rows] = await Promise.all([
+        this.prisma.outgoingMessage.count({ where }),
+        this.prisma.outgoingMessage.findMany({
+          where,
+          orderBy: [{ sentAt: 'desc' }, { createdAt: 'desc' }],
+          skip: position,
+          take: limit,
+        }),
+      ]);
+      const threads: ThreadSummary[] = rows.map((row) => ({
+        id: `${MailService.OUTGOING_THREAD_PREFIX}${row.id}`,
+        subject: row.subject ?? '(sem assunto)',
+        from: { email: row.fromAddr },
+        preview: row.bodyText?.slice(0, 220) || stripHtml(row.bodyHtml ?? '').slice(0, 220),
+        receivedAt: (row.sentAt ?? row.createdAt).toISOString(),
+        unread: false,
+        starred: false,
+        flags: ['$seen', '$sent'],
+        labels: [],
+        messagesCount: 1,
+      }));
+      const nextCursor = position + threads.length;
+      return {
+        threads,
+        total,
+        nextCursor: nextCursor < total ? String(nextCursor) : null,
+      };
+    }
+
     const { emails, total, nextCursor } = await this.withJmapGuard(workspaceId, mailboxId, () =>
       this.jmap.listThreads(credentials, {
         mailboxId: opts.folderId,
@@ -141,6 +197,31 @@ export class MailService {
   }
 
   async getThread(workspaceId: string, mailboxId: string, threadId: string) {
+    if (threadId.startsWith(MailService.OUTGOING_THREAD_PREFIX)) {
+      const outgoingId = threadId.slice(MailService.OUTGOING_THREAD_PREFIX.length);
+      const row = await this.prisma.outgoingMessage.findFirst({
+        where: { id: outgoingId, workspaceId, mailboxId, status: OutgoingMessageStatus.SENT },
+      });
+      if (!row) throw new NotFoundException('Thread não encontrada');
+      const message: EmailMessage = {
+        id: `outgoing-message:${row.id}`,
+        threadId,
+        subject: row.subject ?? '(sem assunto)',
+        from: { email: row.fromAddr },
+        to: row.toAddrs.map((email) => ({ email })),
+        cc: row.ccAddrs.map((email) => ({ email })),
+        bcc: row.bccAddrs.map((email) => ({ email })),
+        replyTo: [],
+        receivedAt: (row.sentAt ?? row.createdAt).toISOString(),
+        sentAt: row.sentAt?.toISOString() ?? row.createdAt.toISOString(),
+        bodyHtml: row.bodyHtml ?? undefined,
+        bodyText: row.bodyText ?? undefined,
+        flags: ['$seen', '$sent'],
+        labels: [],
+        attachments: [],
+      };
+      return { id: threadId, emailIds: [message.id], messages: [message] };
+    }
     const { credentials } = await this.mailboxes.resolveCredentials(workspaceId, mailboxId);
     const result = await this.withJmapGuard(workspaceId, mailboxId, () =>
       this.jmap.getThread(credentials, threadId),
@@ -154,6 +235,30 @@ export class MailService {
   }
 
   async getMessageRaw(workspaceId: string, mailboxId: string, emailId: string): Promise<EmailMessage> {
+    if (emailId.startsWith('outgoing-message:')) {
+      const outgoingId = emailId.slice('outgoing-message:'.length);
+      const row = await this.prisma.outgoingMessage.findFirst({
+        where: { id: outgoingId, workspaceId, mailboxId, status: OutgoingMessageStatus.SENT },
+      });
+      if (!row) throw new NotFoundException('Email não encontrado');
+      return {
+        id: emailId,
+        threadId: `${MailService.OUTGOING_THREAD_PREFIX}${row.id}`,
+        subject: row.subject ?? '(sem assunto)',
+        from: { email: row.fromAddr },
+        to: row.toAddrs.map((email) => ({ email })),
+        cc: row.ccAddrs.map((email) => ({ email })),
+        bcc: row.bccAddrs.map((email) => ({ email })),
+        replyTo: [],
+        receivedAt: (row.sentAt ?? row.createdAt).toISOString(),
+        sentAt: row.sentAt?.toISOString() ?? row.createdAt.toISOString(),
+        bodyHtml: row.bodyHtml ?? undefined,
+        bodyText: row.bodyText ?? undefined,
+        flags: ['$seen', '$sent'],
+        labels: [],
+        attachments: [],
+      };
+    }
     const { credentials } = await this.mailboxes.resolveCredentials(workspaceId, mailboxId);
     const email = await this.withJmapGuard(workspaceId, mailboxId, () =>
       this.jmap.getEmail(credentials, emailId),
