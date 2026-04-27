@@ -115,6 +115,7 @@ export function EmailComposerCard({
     initialDraft?.subject,
     initialDraft?.text,
     initialDraft?.inReplyTo,
+    initialDraft?.references,
     initialDraftReferencesKey,
     initialDraft?.jmapDraftEmailId,
   ]);
@@ -181,6 +182,7 @@ export function EmailComposerCard({
     subject,
     body,
     initialDraft?.inReplyTo,
+    initialDraft?.references,
     initialDraftReferencesKey,
     saveDraft,
     sendButtonPhase,
