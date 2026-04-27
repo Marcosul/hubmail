@@ -147,12 +147,13 @@ export function DomainSetupWizard({
     let cancelled = false;
 
     const normalizeTxt = (value: string) =>
-      value.trim().replace(/^"(.*)"$/, "$1").replace(/\s+/g, " ").toLowerCase();
+      value.trim().replace(/"/g, "").replace(/\s+/g, " ").toLowerCase();
 
     const fqdn = (host: string) => {
       const h = host.trim().replace(/\.$/, "");
-      if (h === "@") return setup.domain.name;
-      return h.includes(".") ? h : `${h}.${setup.domain.name}`;
+      if (h === "@" || h === "") return setup.domain.name;
+      if (h === setup.domain.name || h.endsWith(`.${setup.domain.name}`)) return h;
+      return `${h}.${setup.domain.name}`;
     };
 
     const checkRecord = async (row: DnsSetupRow): Promise<"pending" | "verified"> => {
@@ -160,7 +161,7 @@ export function DomainSetupWizard({
         const type = row.type.toUpperCase();
         const name = fqdn(row.host);
         const res = await fetch(
-          `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}`,
+          `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}&random=${Date.now()}`,
         );
         if (!res.ok) return "pending";
         const json = (await res.json()) as { Answer?: { data?: string }[] };
