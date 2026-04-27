@@ -29,6 +29,9 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "HubMail",
     description: metadataCopy[locale],
+    icons: {
+      icon: "/hubmail-mark-dark.svg",
+    },
   };
 }
 
