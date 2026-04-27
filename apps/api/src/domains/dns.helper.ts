@@ -1,12 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { IEmailServerAdapter } from './email-server.adapter';
 import type { DnsSetupRow } from './domains.service';
+import { StalwartAdapter } from './stalwart.helper';
 
 @Injectable()
 export class DnsHelper {
   private readonly log = new Logger(DnsHelper.name);
 
-  constructor(private readonly emailServer: IEmailServerAdapter) {}
+  constructor(private readonly emailServer: StalwartAdapter) {}
 
   async appendMailAuthHintsIfMissing(
     rows: DnsSetupRow[],
