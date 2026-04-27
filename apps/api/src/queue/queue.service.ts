@@ -97,7 +97,7 @@ export class QueueService implements OnModuleDestroy {
   }
 
   isEnabled(): boolean {
-    return this.queues.size > 0;
+    return this.queues.size > 0 && (this.redis?.status === 'ready' || this.redis?.status === 'connect');
   }
 
   async onModuleDestroy(): Promise<void> {

@@ -83,16 +83,31 @@ export class DomainsService {
         source: 'hint',
       });
     }
-    if (!hasDkim) {
-      const realDkim = await this.stalwartGetDkimKey(domainName);
+    const realDkimKeys = await this.stalwartGetDkimKeys(domainName);
+    if (realDkimKeys.length > 0) {
+      for (const key of realDkimKeys) {
+        const host = `${key.selector}._domainkey`;
+        const alreadyHasThisSelector = rows.some(
+          (r) => r.type === 'TXT' && r.host.toLowerCase() === host.toLowerCase(),
+        );
+        if (!alreadyHasThisSelector) {
+          rows.push({
+            id: `hint-dkim-${key.selector}`,
+            label: `DKIM (${key.algorithm.toUpperCase()}) — assinatura criptográfica`,
+            type: 'TXT',
+            host,
+            value: `v=DKIM1; k=${key.algorithm}; p=${key.publicKey}`,
+            source: 'hint',
+          });
+        }
+      }
+    } else if (!hasDkim) {
       rows.push({
-        id: 'hint-dkim',
-        label: 'DKIM — assinatura criptográfica (evita que o seu email seja marcado como spam)',
+        id: 'hint-dkim-fallback',
+        label: 'DKIM — assinatura criptográfica (chave não encontrada no servidor)',
         type: 'TXT',
-        host: realDkim?.selector ? `${realDkim.selector}._domainkey` : 'default._domainkey',
-        value: realDkim?.publicKey 
-          ? `v=DKIM1; k=${realDkim.algorithm || 'rsa'}; p=${realDkim.publicKey}`
-          : `No painel de administração do servidor › Domínios › ${domainName} › DKIM — copie o registo TXT completo.`,
+        host: 'default._domainkey',
+        value: `No painel de administração do servidor › Domínios › ${domainName} › DKIM — copie o registo TXT completo.`,
         source: 'hint',
       });
     }
@@ -319,8 +334,7 @@ export class DomainsService {
     ]);
     const list = (getRes.find((r) => r[0] === 'x:Domain/get')?.[1] as { list?: { id?: string; name?: string }[] })
       ?.list ?? [];
-    const hit =
-      list.find((d) => (d.name ?? '').toLowerCase() === normalizedName) ?? list[0];
+    const hit = list.find((d) => (d.name ?? '').toLowerCase() === normalizedName);
     return hit?.id ?? null;
   }
 
@@ -341,10 +355,8 @@ export class DomainsService {
         dnsManagement: { '@type': 'Manual' },
         subAddressing: { '@type': 'Enabled' },
       };
-      if (aliases.length) {
+      if (aliases && aliases.length > 0) {
         createPayload.aliases = aliases;
-      } else {
-        createPayload.aliases = {};
       }
 
       const setRes = await this.jmap.invokeStalwartManagement(creds, [
@@ -370,6 +382,26 @@ export class DomainsService {
           return { id: null, zoneText: '', detail: err ?? 'create_failed' };
         }
       }
+    } else {
+      // Se já existe, garantimos que configurações críticas estão ok (DKIM Automatic)
+      try {
+        await this.jmap.invokeStalwartManagement(creds, [
+          [
+            'x:Domain/set',
+            {
+              update: {
+                [id]: {
+                  dkimManagement: { '@type': 'Automatic' },
+                  subAddressing: { '@type': 'Enabled' },
+                },
+              },
+            },
+            'u1',
+          ],
+        ]);
+      } catch (e) {
+        this.log.debug(`Falha ao atualizar configurações do domínio existente ${normalized}: ${e}`);
+      }
     }
 
     const getRes = await this.jmap.invokeStalwartManagement(creds, [
@@ -384,48 +416,77 @@ export class DomainsService {
     return { id, zoneText };
   }
 
-  private async stalwartGetDkimKey(
+  private async stalwartGetDkimKeys(
     domainName: string,
-  ): Promise<{ publicKey: string; selector: string; algorithm: string } | null> {
+  ): Promise<{ publicKey: string; selector: string; algorithm: string }[]> {
     const creds = this.managementCreds();
-    if (!creds) return null;
+    if (!creds) return [];
 
     try {
-      // Procura chaves DKIM associadas a este domínio
       const responses = await this.jmap.invokeStalwartManagement(creds, [
         [
-          'x:DkimKey/query',
+          'x:DkimSignature/query',
           {
             filter: { domain: domainName.toLowerCase() },
-            limit: 1,
           },
           'q-dkim',
         ],
         [
-          'x:DkimKey/get',
+          'x:DkimSignature/get',
           {
-            '#ids': { resultOf: 'q-dkim', name: 'x:DkimKey/query', path: '/ids' },
+            '#ids': { resultOf: 'q-dkim', name: 'x:DkimSignature/query', path: '/ids' },
           },
           'g-dkim',
         ],
       ]);
 
-      const getRes = responses.find((r) => r[0] === 'x:DkimKey/get')?.[1] as {
-        list?: { publicKey?: string; selector?: string; algorithm?: string }[];
+      const getRes = responses.find((r) => r[0] === 'x:DkimSignature/get')?.[1] as {
+        list?: { publicKey?: string; selector?: string; algorithm?: string; keyId?: string }[];
       };
 
-      const key = getRes?.list?.[0];
-      if (key?.publicKey) {
-        return {
-          publicKey: key.publicKey,
-          selector: key.selector || 'default',
-          algorithm: key.algorithm || 'rsa',
-        };
+      if (getRes?.list && getRes.list.length > 0) {
+        const keys: { publicKey: string; selector: string; algorithm: string }[] = [];
+        
+        // Se o publicKey já vier na Signature (denormalizado)
+        for (const sig of getRes.list) {
+          if (sig.publicKey && sig.selector) {
+            keys.push({
+              publicKey: sig.publicKey,
+              selector: sig.selector,
+              algorithm: sig.algorithm || 'rsa',
+            });
+          }
+        }
+
+        if (keys.length > 0) return keys;
+
+        // Caso contrário, buscamos os x:DkimKey usando os keyIds
+        const keyIds = getRes.list.map((s) => s.keyId).filter(Boolean) as string[];
+        if (keyIds.length > 0) {
+          const keyRes = await this.jmap.invokeStalwartManagement(creds, [
+            ['x:DkimKey/get', { ids: keyIds }, 'gk'],
+          ]);
+          const keyPayload = keyRes.find((r) => r[0] === 'x:DkimKey/get')?.[1] as {
+            list?: { id: string; publicKey: string; algorithm?: string }[];
+          };
+          
+          for (const sig of getRes.list) {
+            const kObj = keyPayload?.list?.find((k) => k.id === sig.keyId);
+            if (kObj?.publicKey && sig.selector) {
+              keys.push({
+                publicKey: kObj.publicKey,
+                selector: sig.selector,
+                algorithm: kObj.algorithm || 'rsa',
+              });
+            }
+          }
+        }
+        return keys;
       }
     } catch (e) {
-      this.log.debug(`Falha ao buscar DKIM key específica para ${domainName}: ${e}`);
+      this.log.debug(`Falha ao buscar DKIM keys para ${domainName}: ${e}`);
     }
-    return null;
+    return [];
   }
 
   /**
@@ -513,34 +574,42 @@ export class DomainsService {
       },
     });
 
-    let stalwart: { synced: boolean; detail?: string; queued?: boolean } = { synced: false };
+    let stalwart: { synced: boolean; detail?: string; queued?: boolean; id?: string } = { synced: false };
     const creds = this.managementCreds();
     if (creds) {
       if (this.queue.isEnabled()) {
-        await this.queue.enqueueStalwartDomainProvision({
-          domainId: domain.id,
-          aliases: aliasList,
-        });
-        stalwart = { synced: false, queued: true };
-        this.log.log(
-          `\x1b[35m📮\x1b[0m Domínio \x1b[36m${normalized}\x1b[0m enfileirado para o Stalwart (fila \x1b[33mstalwart.domain.provision\x1b[0m)`,
-        );
+        try {
+          await this.queue.enqueueStalwartDomainProvision({
+            domainId: domain.id,
+            aliases: aliasList,
+          });
+          stalwart = { synced: false, queued: true };
+          this.log.log(`\x1b[32m🚀\x1b[0m Registro Stalwart agendado via fila para \x1b[36m${normalized}\x1b[0m`);
+        } catch (e) {
+          this.log.warn(
+            `\x1b[33m⚠️\x1b[0m Falha ao enfileirar provisionamento para ${normalized} (Redis offline?). Tentando síncrono...`,
+          );
+          try {
+            const { id: sid, detail } = await this.stalwartEnsureDomain(creds, normalized, aliasList);
+            if (sid) {
+              stalwart = { synced: true, id: sid };
+            } else {
+              stalwart = { synced: false, detail };
+            }
+          } catch (syncErr) {
+            stalwart = { synced: false, detail: syncErr instanceof Error ? syncErr.message : String(syncErr) };
+          }
+        }
       } else {
         try {
-          const { id, detail } = await this.stalwartEnsureDomain(creds, normalized, aliasList);
-          stalwart = {
-            synced: Boolean(id),
-            ...(detail ? { detail } : {}),
-          };
-          if (id) {
-            this.log.log(
-              `\x1b[35m📬\x1b[0m Stalwart alinhado ao domínio HubMail \x1b[36m${normalized}\x1b[0m`,
-            );
+          const { id: sid, detail } = await this.stalwartEnsureDomain(creds, normalized, aliasList);
+          if (sid) {
+            stalwart = { synced: true, id: sid };
+          } else {
+            stalwart = { synced: false, detail };
           }
         } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          this.log.warn(`\x1b[33m⚠️\x1b[0m Falha ao sincronizar com Stalwart: ${msg}`);
-          stalwart = { synced: false, detail: msg };
+          stalwart = { synced: false, detail: e instanceof Error ? e.message : String(e) };
         }
       }
     } else {
