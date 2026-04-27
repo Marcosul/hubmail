@@ -628,6 +628,137 @@ export class JmapClient {
    * Guarda rascunho na pasta Drafts (JMAP): cria Email com $draft e, se houver
    * replaceEmailId, destrói o anterior no mesmo Email/set (RFC 8621 §4.6).
    */
+  async sendEmail(
+    creds: JmapCredentials,
+    args: {
+      sentMailboxId: string;
+      fromEmail: string;
+      fromName?: string | null;
+      to: Array<{ email: string; name?: string | null }>;
+      cc?: Array<{ email: string; name?: string | null }>;
+      bcc?: Array<{ email: string; name?: string | null }>;
+      subject: string;
+      html?: string | null;
+      text?: string | null;
+      inReplyTo?: string | null;
+      references?: string[] | null;
+    },
+  ): Promise<{ emailId: string; messageId: string | null }> {
+    const session = await this.getSession(creds);
+    const accountId = this.primaryAccountId(session);
+
+    const from: Array<{ email: string; name?: string | null }> = [
+      args.fromName?.trim()
+        ? { email: args.fromEmail, name: args.fromName.trim() }
+        : { email: args.fromEmail },
+    ];
+
+    const bodyParts: Record<string, unknown> = {};
+    const bodyStructureChildren: unknown[] = [];
+
+    if (args.html && args.text) {
+      bodyParts['p-txt'] = { value: args.text, isTruncated: false };
+      bodyParts['p-html'] = { value: args.html, isTruncated: false };
+      bodyStructureChildren.push({ type: 'text/plain', partId: 'p-txt' });
+      bodyStructureChildren.push({ type: 'text/html', partId: 'p-html' });
+    } else if (args.html) {
+      bodyParts['p-html'] = { value: args.html, isTruncated: false };
+      bodyStructureChildren.push({ type: 'text/html', partId: 'p-html' });
+    } else {
+      const txt = args.text ?? ' ';
+      bodyParts['p-txt'] = { value: txt, isTruncated: false };
+      bodyStructureChildren.push({ type: 'text/plain', partId: 'p-txt' });
+    }
+
+    const bodyStructure =
+      bodyStructureChildren.length === 1
+        ? bodyStructureChildren[0]
+        : { type: 'multipart/alternative', subParts: bodyStructureChildren };
+
+    const emailDoc: Record<string, unknown> = {
+      mailboxIds: { [args.sentMailboxId]: true },
+      keywords: { $seen: true },
+      from,
+      subject: args.subject,
+      bodyStructure,
+      bodyValues: bodyParts,
+    };
+
+    if (args.to?.length) emailDoc.to = args.to;
+    if (args.cc?.length) emailDoc.cc = args.cc;
+    if (args.bcc?.length) emailDoc.bcc = args.bcc;
+    const irt = args.inReplyTo?.trim();
+    if (irt) emailDoc.inReplyTo = [irt];
+    const refs = (args.references ?? []).map((r) => r.trim()).filter(Boolean);
+    if (refs.length) emailDoc.references = refs;
+
+    const allRcpt = [
+      ...(args.to ?? []),
+      ...(args.cc ?? []),
+      ...(args.bcc ?? []),
+    ].map((r) => ({ email: r.email }));
+
+    const calls: JmapInvocation[] = [
+      [
+        'Email/set',
+        { accountId, create: { send: emailDoc } },
+        'e0',
+      ],
+      [
+        'EmailSubmission/set',
+        {
+          accountId,
+          create: {
+            sub: {
+              emailId: { '#': { resultOf: 'e0', name: 'Email/set', path: '/created/send/id' } },
+              envelope: {
+                mailFrom: { email: args.fromEmail },
+                rcptTo: allRcpt,
+              },
+            },
+          },
+        },
+        's0',
+      ],
+    ];
+
+    const responses = await this.invoke(session, creds, calls);
+
+    const emailResult = responses.find((r) => r[2] === 'e0')?.[1] as {
+      created?: Record<string, { id?: string; messageId?: string[] }>;
+      notCreated?: Record<string, { type?: string; description?: string }>;
+    };
+    const subResult = responses.find((r) => r[2] === 's0')?.[1] as {
+      created?: Record<string, { id?: string }>;
+      notCreated?: Record<string, { type?: string; description?: string }>;
+    };
+
+    const emailNotCreated = emailResult?.notCreated?.['send'];
+    if (emailNotCreated) {
+      const detail = emailNotCreated.description ?? emailNotCreated.type ?? 'unknown';
+      this.log.error(`${c.red}📤${c.reset} Email/set falhou: ${detail}`);
+      throw new BadGatewayException(`JMAP send Email/set: ${detail}`);
+    }
+
+    const subNotCreated = subResult?.notCreated?.['sub'];
+    if (subNotCreated) {
+      const detail = subNotCreated.description ?? subNotCreated.type ?? 'unknown';
+      this.log.error(`${c.red}📤${c.reset} EmailSubmission/set falhou: ${detail}`);
+      throw new BadGatewayException(`JMAP send EmailSubmission/set: ${detail}`);
+    }
+
+    const emailId = emailResult?.created?.['send']?.id;
+    if (!emailId) {
+      throw new BadGatewayException('JMAP send: Email/set sem id na resposta');
+    }
+
+    const messageId = emailResult?.created?.['send']?.messageId?.[0] ?? null;
+    this.log.log(
+      `${c.green}🚀${c.reset} JMAP EmailSubmission enviado: emailId=${c.cyan}${emailId}${c.reset}`,
+    );
+    return { emailId, messageId };
+  }
+
   async upsertComposeDraft(
     creds: JmapCredentials,
     args: {

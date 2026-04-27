@@ -482,21 +482,17 @@ export class MailService {
     }
 
     try {
-      await this.smtp.send(
-        { user: credentials.username, pass: credentials.password },
-        {
-          from: mailbox.address,
-          to: dto.to,
-          cc: dto.cc,
-          bcc: dto.bcc,
-          subject: dto.subject,
-          html: sanitizedHtml,
-          text: dto.text,
-          inReplyTo: dto.inReplyTo,
-          references: dto.references,
-          attachments,
-        },
-      );
+      await this.sendViaJmapOrSmtp(credentials, mailbox.address, {
+        to: dto.to,
+        cc: dto.cc,
+        bcc: dto.bcc,
+        subject: dto.subject,
+        html: sanitizedHtml,
+        text: dto.text,
+        inReplyTo: dto.inReplyTo,
+        references: dto.references,
+        attachments,
+      });
       await this.prisma.outgoingMessage.update({
         where: { id: record.id },
         data: {
@@ -555,6 +551,59 @@ export class MailService {
         );
       }
       throw error;
+    }
+  }
+
+  private async sendViaJmapOrSmtp(
+    credentials: { username: string; password: string },
+    fromAddress: string,
+    envelope: {
+      to: string[];
+      cc?: string[];
+      bcc?: string[];
+      subject: string;
+      html?: string;
+      text?: string;
+      inReplyTo?: string;
+      references?: string[];
+      attachments?: Array<{ filename: string; content: Buffer; contentType: string }>;
+    },
+  ): Promise<void> {
+    // JMAP send não suporta attachments ainda — usar SMTP nesses casos
+    if (envelope.attachments?.length) {
+      await this.smtp.send(
+        { user: credentials.username, pass: credentials.password },
+        { from: fromAddress, ...envelope },
+      );
+      return;
+    }
+
+    try {
+      const mailboxes = await this.jmap.listMailboxes(credentials);
+      const sentBox = mailboxes.find((m) => isSentMailboxFolder(m));
+      if (!sentBox) throw new Error('pasta Sent não encontrada via JMAP');
+
+      await this.jmap.sendEmail(credentials, {
+        sentMailboxId: sentBox.id,
+        fromEmail: fromAddress,
+        to: envelope.to.map((e) => ({ email: e })),
+        cc: envelope.cc?.map((e) => ({ email: e })),
+        bcc: envelope.bcc?.map((e) => ({ email: e })),
+        subject: envelope.subject,
+        html: envelope.html,
+        text: envelope.text,
+        inReplyTo: envelope.inReplyTo,
+        references: envelope.references,
+      });
+    } catch (jmapErr) {
+      const jmapMsg = jmapErr instanceof Error ? jmapErr.message : String(jmapErr);
+      this.log.warn(
+        `${c.yellow}⚠️${c.reset} JMAP send falhou (${jmapMsg}), tentando SMTP...`,
+      );
+      await this.smtp.send(
+        { user: credentials.username, pass: credentials.password },
+        { from: fromAddress, ...envelope },
+      );
     }
   }
 
