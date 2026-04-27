@@ -29,7 +29,7 @@ const privacyCopy = {
         title: "3. Bases legais",
         body: [
           "O tratamento pode ocorrer para execução de contrato, cumprimento de obrigação legal, exercício regular de direitos, legítimo interesse na segurança e operação da plataforma ou mediante consentimento quando necessário.",
-          "Quando você administra contas de terceiros, deve garantir que possui base legal e autorização adequada para tratar esses dados no HubMail.",
+          "Quando você administra contas de terceiros, deve garantir que possui base legal e autorização adequada para tratar esses dados no HubMail. ",
         ],
       },
       {
