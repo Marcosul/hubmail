@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, CheckCircle2, CircleHelp, Clock3, Copy, X } from "lucide-react";
+import { Check, CheckCircle2, CircleHelp, Clock3, Copy, Loader2, X } from "lucide-react";
 import {
   useCreateDomain,
   useDomainSetup,
@@ -128,6 +128,8 @@ export function DomainSetupWizard({
   const [verifyHint, setVerifyHint] = useState<string | null>(null);
   const [verifySuccess, setVerifySuccess] = useState(false);
   const [recordStatus, setRecordStatus] = useState<Record<string, "pending" | "verified">>({});
+  const [checkingRecords, setCheckingRecords] = useState(false);
+  const [verifyDone, setVerifyDone] = useState(false);
 
   const create = useCreateDomain();
   const verify = useVerifyDomain();
@@ -142,18 +144,15 @@ export function DomainSetupWizard({
     setVerifySuccess(setup.domain.status === "VERIFIED");
   }, [open, domainId, setup?.domain.status]);
 
-  useEffect(() => {
-    if (!open || step !== 2 || !setup?.domain?.name || !setup?.records?.length) return;
-    let cancelled = false;
-
+  const checkAllRecords = async (domainName: string, rows: DnsSetupRow[]) => {
     const normalizeTxt = (value: string) =>
       value.trim().replace(/"/g, "").replace(/\s+/g, " ").toLowerCase();
 
     const fqdn = (host: string) => {
       const h = host.trim().replace(/\.$/, "");
-      if (h === "@" || h === "") return setup.domain.name;
-      if (h === setup.domain.name || h.endsWith(`.${setup.domain.name}`)) return h;
-      return `${h}.${setup.domain.name}`;
+      if (h === "@" || h === "") return domainName;
+      if (h === domainName || h.endsWith(`.${domainName}`)) return h;
+      return `${h}.${domainName}`;
     };
 
     const checkRecord = async (row: DnsSetupRow): Promise<"pending" | "verified"> => {
@@ -195,18 +194,9 @@ export function DomainSetupWizard({
       }
     };
 
-    (async () => {
-      const pairs = await Promise.all(
-        setup.records.map(async (row) => [row.id, await checkRecord(row)] as const),
-      );
-      if (cancelled) return;
-      setRecordStatus(Object.fromEntries(pairs));
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, step, setup?.domain?.name, setup?.records]);
+    const pairs = await Promise.all(rows.map(async (row) => [row.id, await checkRecord(row)] as const));
+    return Object.fromEntries(pairs);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -214,6 +204,9 @@ export function DomainSetupWizard({
     setSyncWarning(null);
     setVerifyHint(null);
     setVerifySuccess(false);
+    setVerifyDone(false);
+    setRecordStatus({});
+    setCheckingRecords(false);
     if (mode === "configure" && existingDomainId) {
       setDomainId(existingDomainId);
       setDomainName(existingDomainName ?? "");
@@ -285,20 +278,27 @@ export function DomainSetupWizard({
   }
 
   async function runVerify() {
-    if (!domainId) return;
+    if (!domainId || !setup?.domain?.name || !setup?.records?.length) return;
     setVerifyHint(null);
+    setCheckingRecords(true);
     try {
-      const res = await verify.mutateAsync(domainId);
+      const [verifyRes, dnsStatus] = await Promise.all([
+        verify.mutateAsync(domainId),
+        checkAllRecords(setup.domain.name, setup.records),
+      ]);
       await refetchSetup();
-      if (res.status === "VERIFIED") {
+      setRecordStatus(dnsStatus);
+      setVerifyDone(true);
+      if (verifyRes.status === "VERIFIED") {
         setVerifySuccess(true);
-        setStep(3);
         setVerifyHint(null);
       } else {
         setVerifyHint(copy.verificationPending);
       }
     } catch (e) {
       setVerifyHint(e instanceof Error ? e.message : "Erro");
+    } finally {
+      setCheckingRecords(false);
     }
   }
 
@@ -482,7 +482,15 @@ export function DomainSetupWizard({
                       {records.map((row) => (
                         <tr key={row.id} className="border-b border-neutral-100 dark:border-hub-border">
                           <td className="px-3 py-2 align-top">
-                            {recordStatus[row.id] === "verified" ? (
+                            {checkingRecords ? (
+                              <span
+                                className="inline-flex"
+                                title="Verificando…"
+                                aria-label="Verificando"
+                              >
+                                <Loader2 className="size-4 animate-spin text-neutral-400" />
+                              </span>
+                            ) : recordStatus[row.id] === "verified" ? (
                               <span
                                 className="inline-flex"
                                 title="Registro verificado"
@@ -490,13 +498,21 @@ export function DomainSetupWizard({
                               >
                                 <CheckCircle2 className="size-4 text-emerald-600" />
                               </span>
+                            ) : verifyDone ? (
+                              <span
+                                className="inline-flex"
+                                title="Registro não encontrado"
+                                aria-label="Registro não encontrado"
+                              >
+                                <Clock3 className="size-4 text-red-400" />
+                              </span>
                             ) : (
                               <span
                                 className="inline-flex"
-                                title="Registro pendente"
-                                aria-label="Registro pendente"
+                                title="Aguardando verificação"
+                                aria-label="Aguardando verificação"
                               >
-                                <Clock3 className="size-4 text-amber-500" />
+                                <Clock3 className="size-4 text-neutral-300 dark:text-neutral-600" />
                               </span>
                             )}
                           </td>
@@ -537,7 +553,13 @@ export function DomainSetupWizard({
                   </table>
                 </div>
               )}
-              {verifyHint ? <p className="text-sm text-amber-700 dark:text-amber-300">{verifyHint}</p> : null}
+              {verifyDone && verifySuccess ? (
+                <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200">
+                  {copy.verificationOk}
+                </p>
+              ) : verifyHint ? (
+                <p className="text-sm text-amber-700 dark:text-amber-300">{verifyHint}</p>
+              ) : null}
             </div>
           )}
 
@@ -593,18 +615,21 @@ export function DomainSetupWizard({
               <>
                 <button
                   type="button"
-                  disabled={verify.isPending || !domainId}
+                  disabled={verify.isPending || checkingRecords || !domainId}
                   onClick={() => void runVerify()}
-                  className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-neutral-900"
+                  className="inline-flex items-center gap-2 rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-neutral-900"
                 >
+                  {(verify.isPending || checkingRecords) && (
+                    <Loader2 className="size-4 animate-spin" />
+                  )}
                   {copy.validate}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setStep(3)}
+                  onClick={() => onOpenChange(false)}
                   className="rounded-md border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-800 dark:border-hub-border dark:text-neutral-200"
                 >
-                  {copy.next}
+                  {copy.finish}
                 </button>
               </>
             ) : null}

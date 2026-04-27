@@ -348,8 +348,8 @@ export const messages = {
           "Nomes extra tratados como o mesmo domínio no servidor de correio (consulte a documentação de domínios).",
         next: "Continuar",
         back: "Voltar",
-        validate: "Validar registros",
-        finish: "Concluir",
+        validate: "Verificar Propagação",
+        finish: "Fechar",
         step2Description:
           "Sugestão para envios transacionais; a conta real cria-se no servidor de correio e associa-se no HubMail como mailbox.",
         suggestedSender: "Remetente sugerido",
@@ -357,7 +357,7 @@ export const messages = {
           "Abra o gerenciador DNS do seu domínio e copie e cole os registros abaixo.",
         dnsSteps: [
           "Copie os registros da tabela e publique no DNS.",
-          "Após a propagação, clique em «Validar registros».",
+          "Após a propagação, clique em «Verificar Propagação».",
         ],
         stalwartMgmtOff:
           "Sem credenciais de gestão de domínio configuradas na API, o HubMail não lê o dnsZoneFile automaticamente — crie o domínio no painel de administração do servidor e copie os registos de lá.",
@@ -1340,8 +1340,8 @@ export const messages = {
           "Nombres extra tratados como el mismo dominio en el servidor de correo (consulta la documentación de dominios).",
         next: "Continuar",
         back: "Volver",
-        validate: "Validar registros",
-        finish: "Finalizar",
+        validate: "Verificar Propagación",
+        finish: "Cerrar",
         step2Description:
           "Sugerencia para envíos transaccionales; la cuenta real se crea en el servidor de correo y se enlaza en HubMail como mailbox.",
         suggestedSender: "Remitente sugerido",
@@ -1349,7 +1349,7 @@ export const messages = {
           "Abre el gestor DNS de tu dominio y copia/pega los registros de abajo.",
         dnsSteps: [
           "Copia los registros de la tabla y publícalos en DNS.",
-          "Después de la propagación, pulsa «Validar registros».",
+          "Después de la propagación, pulsa «Verificar Propagación».",
         ],
         stalwartMgmtOff:
           "Sin credenciales de gestión de dominio configuradas en la API, HubMail no lee dnsZoneFile automáticamente — crea el dominio en el panel de administración del servidor y copia el DNS allí.",
