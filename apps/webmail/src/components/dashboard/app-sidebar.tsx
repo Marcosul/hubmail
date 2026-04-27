@@ -70,8 +70,15 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
-    setActiveWorkspaceIdState(getActiveWorkspaceId());
-  }, []);
+    const cookieId = getActiveWorkspaceId();
+    setActiveWorkspaceIdState(cookieId);
+
+    // Se não há cookie e há workspaces, settar o primeiro (garante que o cookie é criado)
+    if (!cookieId && workspaces?.length) {
+      setActiveWorkspaceId(workspaces[0].id);
+      setActiveWorkspaceIdState(workspaces[0].id);
+    }
+  }, [workspaces]);
 
   useEffect(() => {
     if (!settingsOpen && !workspaceMenuOpen) return;
