@@ -84,32 +84,23 @@ export class DomainsService {
       });
     }
     const realDkimKeys = await this.stalwartGetDkimKeys(domainName);
-    if (realDkimKeys.length > 0) {
-      for (const key of realDkimKeys) {
-        const host = `${key.selector}._domainkey`;
-        const alreadyHasThisSelector = rows.some(
-          (r) => r.type === 'TXT' && r.host.toLowerCase() === host.toLowerCase(),
-        );
-        if (!alreadyHasThisSelector) {
-          rows.push({
-            id: `hint-dkim-${key.selector}`,
-            label: `DKIM (${key.algorithm.toUpperCase()}) — assinatura criptográfica`,
-            type: 'TXT',
-            host,
-            value: `v=DKIM1; k=${key.algorithm}; p=${key.publicKey}`,
-            source: 'hint',
-          });
-        }
+    let dkimHintsAdded = 0;
+    for (const key of realDkimKeys) {
+      const host = `${key.selector}._domainkey`;
+      const alreadyHasThisSelector = rows.some(
+        (r) => r.type === 'TXT' && r.host.toLowerCase() === host.toLowerCase(),
+      );
+      if (!alreadyHasThisSelector) {
+        rows.push({
+          id: `hint-dkim-${key.selector}`,
+          label: `DKIM (${key.algorithm.toUpperCase()}) — assinatura criptográfica`,
+          type: 'TXT',
+          host,
+          value: `v=DKIM1; k=${key.algorithm}; p=${key.publicKey}`,
+          source: 'hint',
+        });
+        dkimHintsAdded++;
       }
-    } else if (!hasDkim) {
-      rows.push({
-        id: 'hint-dkim-fallback',
-        label: 'DKIM — assinatura criptográfica (chave não encontrada no servidor)',
-        type: 'TXT',
-        host: 'default._domainkey',
-        value: `No painel de administração do servidor › Domínios › ${domainName} › DKIM — copie o registo TXT completo.`,
-        source: 'hint',
-      });
     }
     if (!hasDmarc) {
       rows.push({
@@ -122,7 +113,7 @@ export class DomainsService {
       });
     }
 
-    const added = (!hasSpf ? 1 : 0) + (!hasDkim ? 1 : 0) + (!hasDmarc ? 1 : 0);
+    const added = (!hasSpf ? 1 : 0) + dkimHintsAdded + (!hasDmarc ? 1 : 0);
     if (added > 0) {
       this.log.log(
         `\x1b[36m📝\x1b[0m DNS mail-auth: \x1b[33m${domainName}\x1b[0m — acrescentadas \x1b[32m${added}\x1b[0m sugestões (SPF/DKIM/DMARC) em falta na lista`,
@@ -423,14 +414,11 @@ export class DomainsService {
     if (!creds) return [];
 
     try {
-      const domainId = await this.stalwartFindDomainId(creds, domainName);
-      if (!domainId) return [];
-
       const responses = await this.jmap.invokeStalwartManagement(creds, [
         [
           'x:DkimSignature/query',
           {
-            filter: { domainId },
+            filter: { domain: domainName.toLowerCase() },
           },
           'q-dkim',
         ],
@@ -459,17 +447,35 @@ export class DomainsService {
           if (sig.publicKey && sig.selector) {
             const type = (sig['@type'] || '').toLowerCase();
             const algorithm = type.includes('ed25519') ? 'ed25519' : 'rsa';
-            keys.push({
-              publicKey: sig.publicKey,
-              selector: sig.selector,
-              algorithm,
-            });
+            keys.push({ publicKey: sig.publicKey, selector: sig.selector, algorithm });
           }
         }
+
+        if (keys.length > 0) return keys;
+
+        // publicKey pode estar em DkimKey separado
+        const keyIds = getRes.list.map((s) => s.keyId).filter(Boolean) as string[];
+        if (keyIds.length > 0) {
+          const keyRes = await this.jmap.invokeStalwartManagement(creds, [
+            ['x:DkimKey/get', { ids: keyIds }, 'gk'],
+          ]);
+          const keyPayload = keyRes.find((r) => r[0] === 'x:DkimKey/get')?.[1] as {
+            list?: { id: string; publicKey: string; algorithm?: string }[];
+          };
+          for (const sig of getRes.list) {
+            const kObj = keyPayload?.list?.find((k) => k.id === sig.keyId);
+            if (kObj?.publicKey && sig.selector) {
+              const type = (sig['@type'] || '').toLowerCase();
+              const algorithm = type.includes('ed25519') ? 'ed25519' : kObj.algorithm || 'rsa';
+              keys.push({ publicKey: kObj.publicKey, selector: sig.selector, algorithm });
+            }
+          }
+        }
+
         return keys;
       }
     } catch (e) {
-      this.log.debug(`Falha ao buscar DKIM keys para ${domainName}: ${e}`);
+      this.log.warn(`Falha ao buscar DKIM keys para ${domainName}: ${e}`);
     }
     return [];
   }
