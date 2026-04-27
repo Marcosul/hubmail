@@ -211,7 +211,7 @@ export default function DomainsPage() {
                 aria-hidden
               />
               <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                Nenhum domínio encontrado para "{searchQuery}"
+                Nenhum domínio encontrado para &quot;{searchQuery}&quot;
               </p>
             </div>
           ) : (
