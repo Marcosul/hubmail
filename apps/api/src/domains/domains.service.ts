@@ -423,11 +423,14 @@ export class DomainsService {
     if (!creds) return [];
 
     try {
+      const domainId = await this.stalwartFindDomainId(creds, domainName);
+      if (!domainId) return [];
+
       const responses = await this.jmap.invokeStalwartManagement(creds, [
         [
           'x:DkimSignature/query',
           {
-            filter: { domain: domainName.toLowerCase() },
+            filter: { domainId },
           },
           'q-dkim',
         ],
@@ -441,44 +444,26 @@ export class DomainsService {
       ]);
 
       const getRes = responses.find((r) => r[0] === 'x:DkimSignature/get')?.[1] as {
-        list?: { publicKey?: string; selector?: string; algorithm?: string; keyId?: string }[];
+        list?: {
+          publicKey?: string;
+          selector?: string;
+          '@type'?: string;
+          keyId?: string;
+        }[];
       };
 
       if (getRes?.list && getRes.list.length > 0) {
         const keys: { publicKey: string; selector: string; algorithm: string }[] = [];
-        
-        // Se o publicKey já vier na Signature (denormalizado)
+
         for (const sig of getRes.list) {
           if (sig.publicKey && sig.selector) {
+            const type = (sig['@type'] || '').toLowerCase();
+            const algorithm = type.includes('ed25519') ? 'ed25519' : 'rsa';
             keys.push({
               publicKey: sig.publicKey,
               selector: sig.selector,
-              algorithm: sig.algorithm || 'rsa',
+              algorithm,
             });
-          }
-        }
-
-        if (keys.length > 0) return keys;
-
-        // Caso contrário, buscamos os x:DkimKey usando os keyIds
-        const keyIds = getRes.list.map((s) => s.keyId).filter(Boolean) as string[];
-        if (keyIds.length > 0) {
-          const keyRes = await this.jmap.invokeStalwartManagement(creds, [
-            ['x:DkimKey/get', { ids: keyIds }, 'gk'],
-          ]);
-          const keyPayload = keyRes.find((r) => r[0] === 'x:DkimKey/get')?.[1] as {
-            list?: { id: string; publicKey: string; algorithm?: string }[];
-          };
-          
-          for (const sig of getRes.list) {
-            const kObj = keyPayload?.list?.find((k) => k.id === sig.keyId);
-            if (kObj?.publicKey && sig.selector) {
-              keys.push({
-                publicKey: kObj.publicKey,
-                selector: sig.selector,
-                algorithm: kObj.algorithm || 'rsa',
-              });
-            }
           }
         }
         return keys;
