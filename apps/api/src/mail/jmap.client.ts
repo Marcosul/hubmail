@@ -710,7 +710,7 @@ export class JmapClient {
           accountId,
           create: {
             sub: {
-              emailId: { '#': { resultOf: 'e0', name: 'Email/set', path: '/created/send/id' } },
+              '#emailId': { resultOf: 'e0', name: 'Email/set', path: '/created/send/id' },
               envelope: {
                 mailFrom: { email: args.fromEmail },
                 rcptTo: allRcpt,
