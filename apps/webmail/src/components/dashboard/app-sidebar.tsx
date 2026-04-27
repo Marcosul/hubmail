@@ -59,6 +59,8 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
+  const [addingWorkspace, setAddingWorkspace] = useState(false);
+  const [newWorkspaceName, setNewWorkspaceName] = useState("");
   const settingsMenuRef = useRef<HTMLDivElement>(null);
   const workspaceMenuRef = useRef<HTMLDivElement>(null);
   const { data: workspaces } = useWorkspaces();
@@ -90,6 +92,8 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
       }
       if (workspaceNode && !workspaceNode.contains(event.target as Node)) {
         setWorkspaceMenuOpen(false);
+        setAddingWorkspace(false);
+        setNewWorkspaceName("");
       }
     }
     function handleKeyDown(event: KeyboardEvent) {
@@ -123,13 +127,15 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
     router.refresh();
   }
 
-  async function handleAddWorkspace() {
-    const nextWorkspaceNumber = (workspaces?.length ?? 0) + 1;
-    const workspace = await createWorkspace.mutateAsync({
-      name: `Workspace ${nextWorkspaceNumber}`,
-    });
+  async function handleAddWorkspace(e: React.FormEvent) {
+    e.preventDefault();
+    const name = newWorkspaceName.trim();
+    if (!name) return;
+    const workspace = await createWorkspace.mutateAsync({ name });
     setActiveWorkspaceId(workspace.id);
     setActiveWorkspaceIdState(workspace.id);
+    setNewWorkspaceName("");
+    setAddingWorkspace(false);
     setWorkspaceMenuOpen(false);
     router.refresh();
   }
@@ -186,15 +192,43 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
                 );
               })}
             </div>
-            <button
-              type="button"
-              onClick={handleAddWorkspace}
-              disabled={createWorkspace.isPending}
-              className="mt-1 flex w-full items-center justify-center gap-1 rounded-md border border-neutral-200 px-2 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-200/60 disabled:cursor-not-allowed disabled:opacity-60 dark:border-hub-border dark:text-neutral-200 dark:hover:bg-white/5"
-            >
-              <Plus className="size-3.5" aria-hidden />
-              {createWorkspace.isPending ? "Adding..." : "Add workspace"}
-            </button>
+            {addingWorkspace ? (
+              <form onSubmit={handleAddWorkspace} className="mt-1 flex gap-1">
+                <input
+                  // eslint-disable-next-line jsx-a11y/no-autofocus
+                  autoFocus
+                  type="text"
+                  value={newWorkspaceName}
+                  onChange={(e) => setNewWorkspaceName(e.target.value)}
+                  placeholder="Nome do workspace"
+                  className="min-w-0 flex-1 rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-xs text-neutral-900 placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:border-hub-border dark:bg-hub-card dark:text-white dark:placeholder-neutral-500"
+                  onKeyDown={(e) => { if (e.key === "Escape") { setAddingWorkspace(false); setNewWorkspaceName(""); } }}
+                />
+                <button
+                  type="submit"
+                  disabled={createWorkspace.isPending || !newWorkspaceName.trim()}
+                  className="shrink-0 rounded-md bg-neutral-900 px-2 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
+                >
+                  {createWorkspace.isPending ? "..." : "Criar"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setAddingWorkspace(false); setNewWorkspaceName(""); }}
+                  className="shrink-0 rounded-md border border-neutral-200 px-2 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100 dark:border-hub-border dark:text-neutral-400 dark:hover:bg-white/5"
+                >
+                  <X className="size-3" />
+                </button>
+              </form>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setAddingWorkspace(true)}
+                className="mt-1 flex w-full items-center justify-center gap-1 rounded-md border border-neutral-200 px-2 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-200/60 dark:border-hub-border dark:text-neutral-200 dark:hover:bg-white/5"
+              >
+                <Plus className="size-3.5" aria-hidden />
+                Adicionar workspace
+              </button>
+            )}
           </div>
         ) : null}
       </div>
