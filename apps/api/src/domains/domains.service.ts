@@ -52,16 +52,16 @@ export class DomainsService {
     return { username, password };
   }
 
-  private mxHintHost(): string {
+  private mxHintHost(domainName: string): string {
     return (
       this.config.get<string>('STALWART_MX_HOST')?.trim() ||
       this.config.get<string>('STALWART_SMTP_HOST')?.trim() ||
-      'mail.example.com'
+      `mail.${domainName}`
     );
   }
 
   /** SPF/DKIM/DMARC sugeridos quando a zona do servidor não traz tudo (ou sem credenciais de gestão). */
-  private appendMailAuthHintsIfMissing(rows: DnsSetupRow[], domainName: string, mxHost: string) {
+  private async appendMailAuthHintsIfMissing(rows: DnsSetupRow[], domainName: string, mxHost: string) {
     const mx = mxHost.replace(/\.$/, '');
     const hasSpf = rows.some((r) => r.type === 'TXT' && r.value.toLowerCase().includes('v=spf1'));
     const hasDkim = rows.some(
@@ -84,20 +84,22 @@ export class DomainsService {
       });
     }
     if (!hasDkim) {
+      const realDkim = await this.stalwartGetDkimKey(domainName);
       rows.push({
         id: 'hint-dkim',
-        label:
-          'DKIM — assinatura do domínio (obrigatório na prática para Gmail; o valor vem do painel do servidor)',
+        label: 'DKIM — assinatura criptográfica (evita que o seu email seja marcado como spam)',
         type: 'TXT',
-        host: 'default._domainkey',
-        value: `No painel de administração do servidor › Domínios › ${domainName} — copie o registo TXT DKIM completo (v=DKIM1; k=rsa; p=...). O nome do host pode ser outro (ex.: rs1._domainkey); use o indicado na zona/DNS exportada, não este exemplo se diferir.`,
+        host: realDkim?.selector ? `${realDkim.selector}._domainkey` : 'default._domainkey',
+        value: realDkim?.publicKey 
+          ? `v=DKIM1; k=${realDkim.algorithm || 'rsa'}; p=${realDkim.publicKey}`
+          : `No painel de administração do servidor › Domínios › ${domainName} › DKIM — copie o registo TXT completo.`,
         source: 'hint',
       });
     }
     if (!hasDmarc) {
       rows.push({
         id: 'hint-dmarc',
-        label: 'DMARC — política (comece com p=none; pode endurecer depois)',
+        label: 'DMARC — política de segurança e relatórios de entrega',
         type: 'TXT',
         host: '_dmarc',
         value: `v=DMARC1; p=none; rua=mailto:postmaster@${domainName}`,
@@ -382,6 +384,50 @@ export class DomainsService {
     return { id, zoneText };
   }
 
+  private async stalwartGetDkimKey(
+    domainName: string,
+  ): Promise<{ publicKey: string; selector: string; algorithm: string } | null> {
+    const creds = this.managementCreds();
+    if (!creds) return null;
+
+    try {
+      // Procura chaves DKIM associadas a este domínio
+      const responses = await this.jmap.invokeStalwartManagement(creds, [
+        [
+          'x:DkimKey/query',
+          {
+            filter: { domain: domainName.toLowerCase() },
+            limit: 1,
+          },
+          'q-dkim',
+        ],
+        [
+          'x:DkimKey/get',
+          {
+            '#ids': { resultOf: 'q-dkim', name: 'x:DkimKey/query', path: '/ids' },
+          },
+          'g-dkim',
+        ],
+      ]);
+
+      const getRes = responses.find((r) => r[0] === 'x:DkimKey/get')?.[1] as {
+        list?: { publicKey?: string; selector?: string; algorithm?: string }[];
+      };
+
+      const key = getRes?.list?.[0];
+      if (key?.publicKey) {
+        return {
+          publicKey: key.publicKey,
+          selector: key.selector || 'default',
+          algorithm: key.algorithm || 'rsa',
+        };
+      }
+    } catch (e) {
+      this.log.debug(`Falha ao buscar DKIM key específica para ${domainName}: ${e}`);
+    }
+    return null;
+  }
+
   /**
    * Chamado pelo BullMQ worker: idempotente (find-or-create no Stalwart).
    * Erros recuperáveis → `throw` para retry; permanentes → `UnrecoverableError`.
@@ -530,7 +576,7 @@ export class DomainsService {
       });
     }
 
-    const mxHost = this.mxHintHost();
+    const mxHost = this.mxHintHost(domain.name);
     const hubmailRow: DnsSetupRow = {
       id: 'hubmail-verify',
       label: 'HubMail (verificação)',
@@ -575,7 +621,7 @@ export class DomainsService {
       }
     }
 
-    this.appendMailAuthHintsIfMissing(rows, domain.name, mxHost);
+    await this.appendMailAuthHintsIfMissing(rows, domain.name, mxHost);
 
     const essentials = rows.filter((row) => this.isEssentialDnsRow(row, domain.name));
     const normalizedEssentials = this.normalizeMxValueAndPriority(essentials);
