@@ -1,10 +1,6 @@
 {
   "permissions": {
-    "allow": [
-      "Bash(grep -v \"^$\")",
-      "Bash(npx prisma *)",
-      "Bash(PGPASSWORD=\"By6M8VlSqrzmkOCe\" psql \"postgresql://postgres@db.nmfxfmyjhjznksleqlop.supabase.co:5432/postgres\" -c \"\\\\dt\")",
-      "Bash(node -e \"const nuqs = require\\('./apps/webmail/node_modules/nuqs'\\); console.log\\(Object.keys\\(nuqs\\).filter\\(k => k.includes\\('parse'\\) || k.includes\\('Adapter'\\)\\).slice\\(0,10\\)\\)\")"
-    ]
+    "allowedTools": ["*"],
+    "allow": ["*"]
   }
 }
