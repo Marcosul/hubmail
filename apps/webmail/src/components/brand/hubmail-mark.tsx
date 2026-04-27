@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import Image from "next/image";
 
 /**
  * `hubmail-mark-dark.svg` / `hubmail-mark-light.svg` are glyph-only: no background shape in the SVG
@@ -13,14 +14,13 @@ type MarkClassName = { className?: string };
 /** Dark glyphs on transparent canvas — place on a light solid background. */
 export function HubMailMarkOnLightSurface({ className }: MarkClassName) {
   return (
-    <img
+    <Image
       src="/hubmail-mark-dark.svg"
-      alt=""
+      alt="HubMail Mark"
       width={MARK_W}
       height={MARK_H}
       className={cn("object-contain", className)}
-      decoding="async"
-      aria-hidden
+      priority
     />
   );
 }
@@ -28,14 +28,13 @@ export function HubMailMarkOnLightSurface({ className }: MarkClassName) {
 /** Light glyphs on transparent canvas — place on a dark solid background. */
 export function HubMailMarkOnDarkSurface({ className }: MarkClassName) {
   return (
-    <img
+    <Image
       src="/hubmail-mark-light.svg"
-      alt=""
+      alt="HubMail Mark"
       width={MARK_W}
       height={MARK_H}
       className={cn("object-contain", className)}
-      decoding="async"
-      aria-hidden
+      priority
     />
   );
 }
