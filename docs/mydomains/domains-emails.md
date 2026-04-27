@@ -52,10 +52,9 @@ Tabela (preencha as URLs reais e os IDs do WebHook após criar no painel):
 | 16 | `virtusclaw.com` | `https://<sua-api>/webhooks/mail/ingest/virtusclaw.com` | `vault://mail/virtusclaw.com/webhook-signature` |
 | 17 | `superclaw.bot` | `https://<sua-api>/webhooks/mail/ingest/superclaw.bot` | `vault://mail/superclaw.bot/webhook-signature` |
 | 18 | `claudio.bot` | `https://<sua-api>/webhooks/mail/ingest/claudio.bot` | `vault://mail/claudio.bot/webhook-signature` |
-| 19 | `funtask.pro` | `https://<sua-api>/webhooks/mail/ingest/funtask.pro` | `vault://mail/funtask.pro/webhook-signature` |
-| 20 | `mensageiro.io` | `https://<sua-api>/webhooks/mail/ingest/mensageiro.io` | `vault://mail/mensageiro.io/webhook-signature` |
-| 21 | `bilhaoascendente.com.br` | `https://<sua-api>/webhooks/mail/ingest/bilhaoascendente.com.br` | `vault://mail/bilhaoascendente.com.br/webhook-signature` |
-| 22 | `ranchoaguaviva.com.br` | `https://<sua-api>/webhooks/mail/ingest/ranchoaguaviva.com.br` | `vault://mail/ranchoaguaviva.com.br/webhook-signature` |
+| 19 | `mensageiro.io` | `https://<sua-api>/webhooks/mail/ingest/mensageiro.io` | `vault://mail/mensageiro.io/webhook-signature` |
+| 20 | `bilhaoascendente.com.br` | `https://<sua-api>/webhooks/mail/ingest/bilhaoascendente.com.br` | `vault://mail/bilhaoascendente.com.br/webhook-signature` |
+| 21 | `ranchoaguaviva.com.br` | `https://<sua-api>/webhooks/mail/ingest/ranchoaguaviva.com.br` | `vault://mail/ranchoaguaviva.com.br/webhook-signature` |
 
 > Passo a passo completo (eventos, HMAC, politica de fila): `hubmail/docs/setup-ionos.md` (secao 12).
 
