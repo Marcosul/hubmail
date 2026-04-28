@@ -10,6 +10,7 @@ import {
   useWebhookCatalog,
 } from "@/hooks/use-webhooks";
 import { EventCheckboxTree } from "./event-checkbox-tree";
+import { ScopeSelector } from "./scope-selector";
 import { SecretDisplay } from "./secret-display";
 
 interface Props {
@@ -18,6 +19,9 @@ interface Props {
     url: string;
     description: string | null;
     events: WebhookEventType[];
+    workspaceIds: string[];
+    inboxIds: string[];
+    clientId: string | null;
     enabled: boolean;
   };
 }
@@ -33,6 +37,9 @@ export function EndpointForm({ initial }: Props) {
   const [url, setUrl] = useState(initial?.url ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [events, setEvents] = useState<WebhookEventType[]>(initial?.events ?? []);
+  const [workspaceIds, setWorkspaceIds] = useState<string[]>(initial?.workspaceIds ?? []);
+  const [inboxIds, setInboxIds] = useState<string[]>(initial?.inboxIds ?? []);
+  const [clientId, setClientId] = useState(initial?.clientId ?? "");
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
   const [createdSecret, setCreatedSecret] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -51,20 +58,22 @@ export function EndpointForm({ initial }: Props) {
       return;
     }
 
+    const payload = {
+      url,
+      description: description || undefined,
+      events,
+      workspaceIds,
+      inboxIds,
+      clientId: clientId || undefined,
+      enabled,
+    };
+
     try {
       if (isEdit && initial) {
-        await update.mutateAsync({
-          id: initial.id,
-          patch: { url, description: description || undefined, events, enabled },
-        });
+        await update.mutateAsync({ id: initial.id, patch: payload });
         router.push("/webhooks/endpoints");
       } else {
-        const res = await create.mutateAsync({
-          url,
-          description: description || undefined,
-          events,
-          enabled,
-        });
+        const res = await create.mutateAsync(payload);
         setCreatedSecret(res.secret);
       }
     } catch (err) {
@@ -126,6 +135,36 @@ export function EndpointForm({ initial }: Props) {
           catalog={catalog ?? []}
           selected={events}
           onChange={setEvents}
+        />
+      </div>
+
+      <div>
+        <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">
+          Workspaces &amp; Inboxes
+        </label>
+        <p className="mb-2 text-xs text-neutral-500">
+          Selecione workspaces da organização e/ou inboxes específicas para filtrar a entrega. Vazio = workspace owner.
+        </p>
+        <ScopeSelector
+          workspaceIds={workspaceIds}
+          inboxIds={inboxIds}
+          onChange={({ workspaceIds: w, inboxIds: i }) => {
+            setWorkspaceIds(w);
+            setInboxIds(i);
+          }}
+        />
+      </div>
+
+      <div>
+        <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">
+          Client ID (opcional)
+        </label>
+        <input
+          value={clientId}
+          onChange={(e) => setClientId(e.target.value)}
+          placeholder="ex.: meu-app-prod"
+          maxLength={128}
+          className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-hub-border dark:bg-hub-card"
         />
       </div>
 

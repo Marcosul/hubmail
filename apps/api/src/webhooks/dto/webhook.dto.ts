@@ -1,12 +1,15 @@
 import {
+  ArrayMaxSize,
   ArrayUnique,
   IsArray,
   IsBoolean,
   IsEnum,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
   IsUrl,
+  IsUUID,
   Matches,
   Max,
   MaxLength,
@@ -14,6 +17,8 @@ import {
   MinLength,
 } from 'class-validator';
 import { WebhookEventType } from '@prisma/client';
+
+const MAX_SCOPE = 10; // segue limite do AgentMail
 
 export class CreateWebhookDto {
   @IsUrl({ require_protocol: true, require_tld: false, protocols: ['http', 'https'] })
@@ -30,6 +35,35 @@ export class CreateWebhookDto {
   @ArrayUnique()
   @IsEnum(WebhookEventType, { each: true })
   events?: WebhookEventType[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @ArrayMaxSize(MAX_SCOPE)
+  @IsUUID('4', { each: true })
+  workspaceIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @ArrayMaxSize(MAX_SCOPE)
+  @IsUUID('4', { each: true })
+  inboxIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  clientId?: string;
+
+  @IsOptional()
+  @IsObject()
+  headers?: Record<string, string>;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(60_000)
+  throttleMs?: number;
 
   @IsOptional()
   @IsBoolean()
@@ -59,6 +93,35 @@ export class UpdateWebhookDto {
   @ArrayUnique()
   @IsEnum(WebhookEventType, { each: true })
   events?: WebhookEventType[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @ArrayMaxSize(MAX_SCOPE)
+  @IsUUID('4', { each: true })
+  workspaceIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @ArrayMaxSize(MAX_SCOPE)
+  @IsUUID('4', { each: true })
+  inboxIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  clientId?: string;
+
+  @IsOptional()
+  @IsObject()
+  headers?: Record<string, string>;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(60_000)
+  throttleMs?: number;
 
   @IsOptional()
   @IsBoolean()

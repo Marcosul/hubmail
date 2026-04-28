@@ -16,13 +16,46 @@ export interface Webhook {
   url: string;
   description: string | null;
   events: WebhookEventType[];
+  workspaceIds: string[];
+  inboxIds: string[];
+  clientId: string | null;
+  headers: Record<string, string>;
+  throttleMs: number | null;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
+export interface WebhookEndpointAttempt {
+  id: string;
+  eventId: string;
+  eventType: WebhookEventType;
+  messageId: string | null;
+  url: string;
+  status: WebhookAttemptStatus;
+  statusCode: number | null;
+  attempt: number;
+  durationMs: number | null;
+  errorMessage: string | null;
+  createdAt: string;
+}
+
 export interface WebhookWithSecret extends Webhook {
   secret: string;
+}
+
+export interface WebhookScopeInbox {
+  id: string;
+  address: string;
+  displayName: string | null;
+}
+
+export interface WebhookScopeWorkspace {
+  id: string;
+  name: string;
+  slug: string;
+  isOwner: boolean;
+  inboxes: WebhookScopeInbox[];
 }
 
 export interface WebhookEventSummary {

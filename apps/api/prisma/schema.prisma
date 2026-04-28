@@ -547,16 +547,21 @@ model Plan {
 // ---------------------------------------------------------------------------
 
 model Webhook {
-  id          String             @id @default(uuid()) @db.Uuid
-  workspaceId String             @map("workspace_id") @db.Uuid
-  url         String
-  description String?            @db.VarChar(500)
-  secret      String
-  stalwartId  String?            @map("stalwart_id")
-  events      WebhookEventType[] @default([])
-  enabled     Boolean            @default(true)
-  createdAt   DateTime           @default(now()) @map("created_at")
-  updatedAt   DateTime           @updatedAt @map("updated_at")
+  id           String             @id @default(uuid()) @db.Uuid
+  workspaceId  String             @map("workspace_id") @db.Uuid
+  url          String
+  description  String?            @db.VarChar(500)
+  secret       String
+  stalwartId   String?            @map("stalwart_id")
+  clientId     String?            @map("client_id")
+  workspaceIds String[]           @default([]) @map("workspace_ids") @db.Uuid
+  inboxIds     String[]           @default([]) @map("inbox_ids") @db.Uuid
+  events       WebhookEventType[] @default([])
+  headers      Json               @default("{}")
+  throttleMs   Int?               @map("throttle_ms")
+  enabled      Boolean            @default(true)
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
 
   workspace Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   attempts  WebhookAttempt[]

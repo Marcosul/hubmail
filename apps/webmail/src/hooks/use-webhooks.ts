@@ -6,9 +6,11 @@ import type {
   Webhook,
   WebhookActivity,
   WebhookCatalogItem,
+  WebhookEndpointAttempt,
   WebhookEventDetail,
   WebhookEventSummary,
   WebhookEventType,
+  WebhookScopeWorkspace,
   WebhookWithSecret,
 } from "@hubmail/types";
 
@@ -16,6 +18,15 @@ const ENDPOINTS_KEY = ["webhook-endpoints"] as const;
 const EVENTS_KEY = ["webhook-events"] as const;
 const CATALOG_KEY = ["webhook-catalog"] as const;
 const ACTIVITY_KEY = ["webhook-activity"] as const;
+const SCOPE_KEY = ["webhook-scope-options"] as const;
+
+export function useWebhookScopeOptions() {
+  return useQuery<WebhookScopeWorkspace[]>({
+    queryKey: SCOPE_KEY,
+    queryFn: () => apiRequest<WebhookScopeWorkspace[]>("/api/webhooks/scope-options"),
+    staleTime: 60_000,
+  });
+}
 
 export function useWebhookEndpoints() {
   return useQuery<Webhook[]>({
@@ -36,7 +47,49 @@ export interface CreateWebhookInput {
   url: string;
   description?: string;
   events?: WebhookEventType[];
+  workspaceIds?: string[];
+  inboxIds?: string[];
+  clientId?: string;
+  headers?: Record<string, string>;
+  throttleMs?: number | null;
   enabled?: boolean;
+}
+
+export function useWebhookEndpoint(id: string | undefined) {
+  return useQuery<Webhook>({
+    queryKey: [...ENDPOINTS_KEY, id],
+    queryFn: () => apiRequest<Webhook>(`/api/webhooks/endpoints/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useWebhookAttempts(
+  id: string | undefined,
+  filter?: { status?: "SUCCEEDED" | "FAILED"; limit?: number },
+) {
+  const params = new URLSearchParams();
+  if (filter?.status) params.set("status", filter.status);
+  if (filter?.limit) params.set("limit", String(filter.limit));
+  const qs = params.toString();
+  return useQuery<WebhookEndpointAttempt[]>({
+    queryKey: [...ENDPOINTS_KEY, id, "attempts", qs],
+    queryFn: () =>
+      apiRequest<WebhookEndpointAttempt[]>(
+        `/api/webhooks/endpoints/${id}/attempts${qs ? `?${qs}` : ""}`,
+      ),
+    enabled: Boolean(id),
+    refetchInterval: 15_000,
+  });
+}
+
+export function useTestWebhook() {
+  return useMutation<{ eventId: string }, Error, { id: string; eventType: WebhookEventType }>({
+    mutationFn: ({ id, eventType }) =>
+      apiRequest(`/api/webhooks/endpoints/${id}/test`, {
+        method: "POST",
+        body: { eventType },
+      }),
+  });
 }
 
 export function useCreateWebhook() {

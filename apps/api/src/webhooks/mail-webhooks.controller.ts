@@ -224,6 +224,7 @@ export class MailWebhooksController {
               workspaceId: domainEntity.workspaceId,
               eventType: webhookType,
               messageId: String(messageId),
+              mailboxId,
               payload: {
                 message: {
                   message_id: String(messageId),

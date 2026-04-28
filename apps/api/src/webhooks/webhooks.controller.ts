@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -35,6 +36,11 @@ export class WebhooksController {
       type: e,
       name: WEBHOOK_EVENT_PUBLIC_NAME[e],
     }));
+  }
+
+  @Get('scope-options')
+  scopeOptions(@CurrentWorkspace() ws: WorkspaceContext) {
+    return this.webhooks.listScopeOptions(ws.workspaceId);
   }
 
   @Get('endpoints')
@@ -77,6 +83,38 @@ export class WebhooksController {
     @Param('id') id: string,
   ) {
     return this.webhooks.rotateSecret(ws.workspaceId, id, user.id);
+  }
+
+  @Get('endpoints/:id')
+  getById(@CurrentWorkspace() ws: WorkspaceContext, @Param('id') id: string) {
+    return this.webhooks.getById(ws.workspaceId, id);
+  }
+
+  @Get('endpoints/:id/attempts')
+  attempts(
+    @CurrentWorkspace() ws: WorkspaceContext,
+    @Param('id') id: string,
+    @Query('status') status?: 'SUCCEEDED' | 'FAILED',
+    @Query('limit') limitRaw?: string,
+  ) {
+    const limit = limitRaw ? parseInt(limitRaw, 10) : undefined;
+    return this.webhooks.listAttempts(ws.workspaceId, id, {
+      status,
+      limit: Number.isFinite(limit as number) ? (limit as number) : undefined,
+    });
+  }
+
+  @Post('endpoints/:id/test')
+  test(
+    @CurrentWorkspace() ws: WorkspaceContext,
+    @Param('id') id: string,
+    @Body() body: { eventType?: WebhookEventType },
+  ) {
+    const eventType = body?.eventType;
+    if (!eventType || !ALL_WEBHOOK_EVENTS.includes(eventType)) {
+      throw new BadRequestException('eventType inválido');
+    }
+    return this.webhooks.sendTestEvent(ws.workspaceId, id, eventType);
   }
 
   @Get('events')

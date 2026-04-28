@@ -105,6 +105,7 @@ export class MailSendRetryWorker implements OnModuleInit, OnModuleDestroy {
       void this.webhookDispatcher
         .dispatch({
           workspaceId: msg.workspaceId,
+          mailboxId: msg.mailboxId,
           eventType: WebhookEventType.MESSAGE_SENT,
           messageId: msg.id,
           payload: {
@@ -130,6 +131,7 @@ export class MailSendRetryWorker implements OnModuleInit, OnModuleDestroy {
       void this.webhookDispatcher
         .dispatch({
           workspaceId: msg.workspaceId,
+          mailboxId: msg.mailboxId,
           eventType: WebhookEventType.MESSAGE_REJECTED,
           messageId: msg.id,
           payload: {

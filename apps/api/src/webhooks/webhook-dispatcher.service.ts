@@ -67,9 +67,11 @@ export class WebhookDispatcherService {
     workspaceId: string;
     eventType: WebhookEventType;
     messageId?: string | null;
+    /** Mailbox associada ao evento (se aplicável). Usado para filtrar `inboxIds`. */
+    mailboxId?: string | null;
     payload: Record<string, unknown>;
   }): Promise<void> {
-    const { workspaceId, eventType, messageId, payload } = input;
+    const { workspaceId, eventType, messageId, mailboxId, payload } = input;
 
     const event = await this.prisma.webhookEvent.create({
       data: {
@@ -80,12 +82,28 @@ export class WebhookDispatcherService {
       },
     });
 
-    const targets = await this.prisma.webhook.findMany({
+    // Procura webhooks no workspace owner OU nos workspaces escopados que
+    // referenciam este workspaceId em `workspace_ids`.
+    const candidates = await this.prisma.webhook.findMany({
       where: {
-        workspaceId,
         enabled: true,
         OR: [{ events: { isEmpty: true } }, { events: { has: eventType } }],
+        AND: [
+          {
+            OR: [
+              { workspaceId },
+              { workspaceIds: { has: workspaceId } },
+            ],
+          },
+        ],
       },
+    });
+
+    // Aplica filtro de inboxIds se houver.
+    const targets = candidates.filter((w) => {
+      if (w.inboxIds.length === 0) return true;
+      if (!mailboxId) return false;
+      return w.inboxIds.includes(mailboxId);
     });
 
     if (targets.length === 0) return;
@@ -101,6 +119,20 @@ export class WebhookDispatcherService {
     await Promise.all(
       targets.map((w) => this.deliverWithRetries(w.id, w.url, w.secret, event.id, body)),
     );
+  }
+
+  /**
+   * Entrega única (sem retry) — usado pelo botão "Test" do painel.
+   * Persiste apenas a tentativa #1.
+   */
+  async deliverSingle(
+    webhookId: string,
+    url: string,
+    secret: string,
+    eventId: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    await this.attemptOnce(webhookId, url, secret, eventId, JSON.stringify(payload), 1);
   }
 
   private async deliverWithRetries(

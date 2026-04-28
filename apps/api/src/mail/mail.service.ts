@@ -513,6 +513,7 @@ export class MailService {
           workspaceId,
           eventType: WebhookEventType.MESSAGE_SENT,
           messageId: record.id,
+          mailboxId: mailbox.id,
           payload: {
             send: {
               message_id: record.id,
@@ -571,6 +572,7 @@ export class MailService {
           workspaceId,
           eventType: WebhookEventType.MESSAGE_REJECTED,
           messageId: record.id,
+          mailboxId: mailbox.id,
           payload: {
             reject: {
               message_id: record.id,
