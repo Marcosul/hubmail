@@ -88,11 +88,23 @@ export class MailboxesService {
   }
 
   private async stalwartFindDomainId(creds: JmapCredentials, domainName: string): Promise<string | null> {
+    const normalized = domainName.toLowerCase();
     const responses = await this.jmap.invokeStalwartManagement(creds, [
-      ['x:Domain/query', { filter: { name: domainName }, limit: 1 }, 'dq1'],
+      ['x:Domain/query', { filter: { text: normalized }, limit: 50 }, 'dq1'],
     ]);
     const qr = responses.find((r) => r[0] === 'x:Domain/query')?.[1] as { ids?: string[] };
-    return qr?.ids?.[0] ?? null;
+    const ids = qr?.ids ?? [];
+    if (!ids.length) return null;
+
+    const getRes = await this.jmap.invokeStalwartManagement(creds, [
+      ['x:Domain/get', { ids }, 'dg1'],
+    ]);
+    const list =
+      (getRes.find((r) => r[0] === 'x:Domain/get')?.[1] as {
+        list?: { id?: string; name?: string }[];
+      })?.list ?? [];
+    const hit = list.find((d) => (d.name ?? '').toLowerCase() === normalized);
+    return hit?.id ?? null;
   }
 
   private async stalwartFindAccountByEmail(

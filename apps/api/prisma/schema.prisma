@@ -63,6 +63,13 @@ enum AgentStatus {
   CANCELLED
 }
 
+enum WorkspaceInviteStatus {
+  PENDING
+  ACCEPTED
+  CANCELLED
+  EXPIRED
+}
+
 // ---------------------------------------------------------------------------
 // Core: profile (Supabase user metadata shadow)
 // ---------------------------------------------------------------------------
@@ -96,15 +103,17 @@ model Organization {
 }
 
 model Workspace {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
   name           String
   slug           String
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
 
   organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   memberships  Membership[]
+  invites      WorkspaceInvite[]
   domains      Domain[]
   mailboxes    Mailbox[]
   apiKeys      ApiKey[]
@@ -118,6 +127,7 @@ model Workspace {
 
   @@unique([organizationId, slug])
   @@index([createdAt])
+  @@index([deletedAt])
   @@map("workspaces")
 }
 
@@ -135,6 +145,26 @@ model Membership {
   @@unique([userId, workspaceId])
   @@index([workspaceId])
   @@map("memberships")
+}
+
+model WorkspaceInvite {
+  id          String                @id @default(uuid()) @db.Uuid
+  workspaceId String                @map("workspace_id") @db.Uuid
+  email       String
+  role        MembershipRole        @default(MEMBER)
+  status      WorkspaceInviteStatus @default(PENDING)
+  token       String                @unique
+  expiresAt   DateTime              @map("expires_at")
+  message     String?               @db.VarChar(500)
+  invitedById String                @map("invited_by_id") @db.Uuid
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status])
+  @@index([email, status])
+  @@map("workspace_invites")
 }
 
 // ---------------------------------------------------------------------------

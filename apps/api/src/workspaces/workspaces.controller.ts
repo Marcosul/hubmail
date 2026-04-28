@@ -1,9 +1,20 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { User } from '@supabase/supabase-js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { SupabaseJwtAuthGuard } from '../auth/guards/supabase-jwt-auth.guard';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
+import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
 import { WorkspacesService } from './workspaces.service';
 
 @ApiTags('workspaces')
@@ -33,9 +44,26 @@ export class WorkspacesController {
     return this.service.bootstrapDefault(user);
   }
 
-  @Get(':slug')
-  @ApiOperation({ summary: 'Detalhe de workspace por slug' })
-  getBySlug(@CurrentUser() user: User, @Param('slug') slug: string) {
-    return this.service.getBySlug(user, slug);
+  @Get(':id')
+  @ApiOperation({ summary: 'Detalhe de workspace por ID' })
+  getById(@CurrentUser() user: User, @Param('id') id: string) {
+    return this.service.getById(user, id);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Renomeia workspace (apenas OWNER ou ADMIN)' })
+  update(
+    @CurrentUser() user: User,
+    @Param('id') id: string,
+    @Body() dto: UpdateWorkspaceDto,
+  ) {
+    return this.service.update(user, id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Apaga workspace em soft-delete (apenas OWNER)' })
+  remove(@CurrentUser() user: User, @Param('id') id: string) {
+    return this.service.remove(user, id);
   }
 }

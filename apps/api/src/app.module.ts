@@ -14,6 +14,8 @@ import { QueueModule } from './queue/queue.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
+import { WorkspaceMembersModule } from './workspace-members/workspace-members.module';
+import { WorkspaceInvitesModule } from './workspace-invites/workspace-invites.module';
 
 @Module({
   imports: [
@@ -23,6 +25,8 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
     AuthModule,
     TenancyModule,
     WorkspacesModule,
+    WorkspaceMembersModule,
+    WorkspaceInvitesModule,
     MailModule,
     QueueModule,
     DomainsModule,

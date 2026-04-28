@@ -1,8 +1,15 @@
-import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { MembershipRole } from '@prisma/client';
 import type { User } from '@supabase/supabase-js';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
+import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
 
 const c = {
   reset: '\x1b[0m',
@@ -39,7 +46,7 @@ export class WorkspacesService {
   async listForUser(user: User) {
     await this.ensureProfile(user.id);
     const memberships = await this.prisma.membership.findMany({
-      where: { userId: user.id },
+      where: { userId: user.id, workspace: { deletedAt: null } },
       orderBy: { createdAt: 'asc' },
       include: {
         workspace: {
@@ -48,18 +55,7 @@ export class WorkspacesService {
       },
     });
 
-    return memberships.map((m) => ({
-      id: m.workspace.id,
-      name: m.workspace.name,
-      slug: m.workspace.slug,
-      role: m.role,
-      organization: {
-        id: m.workspace.organization.id,
-        name: m.workspace.organization.name,
-        slug: m.workspace.organization.slug,
-      },
-      createdAt: m.workspace.createdAt,
-    }));
+    return memberships.map((m) => this.toSummary(m.workspace, m.role, m.workspace.organization));
   }
 
   async create(user: User, dto: CreateWorkspaceDto) {
@@ -123,18 +119,7 @@ export class WorkspacesService {
       `${c.green}🏗️${c.reset}  workspace ${c.magenta}${created.workspace.slug}${c.reset} criado por ${c.cyan}${user.email ?? user.id}${c.reset}`,
     );
 
-    return {
-      id: created.workspace.id,
-      name: created.workspace.name,
-      slug: created.workspace.slug,
-      role: MembershipRole.OWNER,
-      organization: {
-        id: created.organization.id,
-        name: created.organization.name,
-        slug: created.organization.slug,
-      },
-      createdAt: created.workspace.createdAt,
-    };
+    return this.toSummary(created.workspace, MembershipRole.OWNER, created.organization);
   }
 
   async bootstrapDefault(user: User) {
@@ -147,18 +132,7 @@ export class WorkspacesService {
       this.log.debug(
         `${c.yellow}♻️${c.reset}  user ${user.id} já tem workspace ${existing.workspace.slug}`,
       );
-      return {
-        id: existing.workspace.id,
-        name: existing.workspace.name,
-        slug: existing.workspace.slug,
-        role: existing.role,
-        organization: {
-          id: existing.workspace.organization.id,
-          name: existing.workspace.organization.name,
-          slug: existing.workspace.organization.slug,
-        },
-        createdAt: existing.workspace.createdAt,
-      };
+      return this.toSummary(existing.workspace, existing.role, existing.workspace.organization);
     }
 
     const fallback = user.email?.split('@')[0] ?? 'Personal';
@@ -176,17 +150,96 @@ export class WorkspacesService {
     if (!membership) {
       throw new NotFoundException('Workspace não encontrado');
     }
-    return {
-      id: membership.workspace.id,
-      name: membership.workspace.name,
-      slug: membership.workspace.slug,
-      role: membership.role,
-      organization: {
-        id: membership.workspace.organization.id,
-        name: membership.workspace.organization.name,
-        slug: membership.workspace.organization.slug,
+    return this.toSummary(membership.workspace, membership.role, membership.workspace.organization);
+  }
+
+  async getById(user: User, id: string) {
+    const membership = await this.prisma.membership.findFirst({
+      where: { userId: user.id, workspaceId: id, workspace: { deletedAt: null } },
+      include: { workspace: { include: { organization: true } } },
+    });
+    if (!membership) {
+      throw new NotFoundException('Workspace não encontrado');
+    }
+    return this.toSummary(membership.workspace, membership.role, membership.workspace.organization);
+  }
+
+  async update(user: User, id: string, dto: UpdateWorkspaceDto) {
+    const membership = await this.prisma.membership.findFirst({
+      where: { userId: user.id, workspaceId: id, workspace: { deletedAt: null } },
+      include: { workspace: { include: { organization: true } } },
+    });
+    if (!membership) throw new NotFoundException('Workspace não encontrado');
+    if (!([MembershipRole.OWNER, MembershipRole.ADMIN] as MembershipRole[]).includes(membership.role)) {
+      throw new ForbiddenException('Apenas OWNER ou ADMIN podem renomear o workspace');
+    }
+
+    const updated = await this.prisma.workspace.update({
+      where: { id },
+      data: { name: dto.name },
+      include: { organization: true },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        workspaceId: id,
+        actor: user.id,
+        action: 'workspace.updated',
+        subjectType: 'Workspace',
+        subjectId: id,
+        data: { name: dto.name },
       },
-      createdAt: membership.workspace.createdAt,
+    });
+
+    this.log.log(
+      `${c.cyan}✏️${c.reset}  workspace ${c.magenta}${updated.slug}${c.reset} renomeado para "${dto.name}"`,
+    );
+    return this.toSummary(updated, membership.role, updated.organization);
+  }
+
+  async remove(user: User, id: string) {
+    const membership = await this.prisma.membership.findFirst({
+      where: { userId: user.id, workspaceId: id, workspace: { deletedAt: null } },
+    });
+    if (!membership) throw new NotFoundException('Workspace não encontrado');
+    if (membership.role !== MembershipRole.OWNER) {
+      throw new ForbiddenException('Apenas o OWNER pode apagar o workspace');
+    }
+
+    await this.prisma.workspace.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        workspaceId: id,
+        actor: user.id,
+        action: 'workspace.deleted',
+        subjectType: 'Workspace',
+        subjectId: id,
+      },
+    });
+
+    this.log.log(`${c.yellow}🗑️${c.reset}  workspace ${id} marcado como deletado`);
+  }
+
+  private toSummary(
+    workspace: { id: string; name: string; slug: string; createdAt: Date },
+    role: MembershipRole,
+    organization: { id: string; name: string; slug: string },
+  ) {
+    return {
+      id: workspace.id,
+      name: workspace.name,
+      slug: workspace.slug,
+      role,
+      organization: {
+        id: organization.id,
+        name: organization.name,
+        slug: organization.slug,
+      },
+      createdAt: workspace.createdAt,
     };
   }
 }

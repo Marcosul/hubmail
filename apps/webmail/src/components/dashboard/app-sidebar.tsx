@@ -23,6 +23,7 @@ import {
   BookOpen,
   MessageSquare,
   CreditCard,
+  Users,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -32,7 +33,10 @@ import { apiRequest } from "@/api/rest/generic";
 import { SUPPORTED_LOCALES, type AppLocale } from "@/i18n/config";
 import { getLocaleLabel, useI18n } from "@/i18n/client";
 import { getActiveWorkspaceId, setActiveWorkspaceId, useCreateWorkspace, useWorkspaces } from "@/hooks/use-workspace";
+import { useQueryClient } from "@tanstack/react-query";
 import { HubMailMarkThemedTile } from "@/components/brand/hubmail-mark";
+import { WorkspaceSettingsDialog } from "@/components/workspace/workspace-settings-dialog";
+import { WorkspaceMembersDialog } from "@/components/workspace/workspace-members-dialog";
 
 const nav = [
   { href: "/dashboard", labelKey: "overview", icon: LayoutDashboard, exact: true },
@@ -61,10 +65,13 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [addingWorkspace, setAddingWorkspace] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
+  const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
+  const [workspaceMembersOpen, setWorkspaceMembersOpen] = useState(false);
   const settingsMenuRef = useRef<HTMLDivElement>(null);
   const workspaceMenuRef = useRef<HTMLDivElement>(null);
   const { data: workspaces } = useWorkspaces();
   const createWorkspace = useCreateWorkspace();
+  const qc = useQueryClient();
   const [activeWorkspaceId, setActiveWorkspaceIdState] = useState<string | undefined>();
   const activeWorkspace =
     workspaces?.find((workspace) => workspace.id === activeWorkspaceId) ?? workspaces?.[0];
@@ -124,6 +131,9 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
     setActiveWorkspaceId(workspaceId);
     setActiveWorkspaceIdState(workspaceId);
     setWorkspaceMenuOpen(false);
+    // Invalida todas as queries para que domínios, inboxes, webhooks, etc.
+    // sejam recarregados com o novo workspace (o cookie já foi atualizado acima).
+    qc.invalidateQueries();
     router.refresh();
   }
 
@@ -192,6 +202,26 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
                 );
               })}
             </div>
+            {activeWorkspace && (
+              <div className="mt-1 flex gap-1 border-t border-neutral-100 pt-1 dark:border-neutral-700">
+                <button
+                  type="button"
+                  onClick={() => { setWorkspaceMembersOpen(true); setWorkspaceMenuOpen(false); }}
+                  className="flex flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-neutral-600 hover:bg-neutral-200/60 dark:text-neutral-300 dark:hover:bg-white/5"
+                >
+                  <Users className="size-3.5" aria-hidden />
+                  Membros
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setWorkspaceSettingsOpen(true); setWorkspaceMenuOpen(false); }}
+                  className="flex flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-neutral-600 hover:bg-neutral-200/60 dark:text-neutral-300 dark:hover:bg-white/5"
+                >
+                  <Settings className="size-3.5" aria-hidden />
+                  Definições
+                </button>
+              </div>
+            )}
             {addingWorkspace ? (
               <form onSubmit={handleAddWorkspace} className="mt-1 flex gap-1">
                 <input
@@ -413,6 +443,19 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
       >
         <SidebarContent />
       </aside>
+
+      {workspaceSettingsOpen && activeWorkspace && (
+        <WorkspaceSettingsDialog
+          workspace={activeWorkspace}
+          onClose={() => setWorkspaceSettingsOpen(false)}
+        />
+      )}
+      {workspaceMembersOpen && activeWorkspace && (
+        <WorkspaceMembersDialog
+          workspace={activeWorkspace}
+          onClose={() => setWorkspaceMembersOpen(false)}
+        />
+      )}
     </>
   );
 }
