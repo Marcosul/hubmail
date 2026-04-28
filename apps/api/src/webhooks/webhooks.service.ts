@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { Webhook, WebhookEventType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateWebhookDto, UpdateWebhookDto } from './dto/webhook.dto';
+import { StalwartWebhooksAdapter } from './stalwart-webhooks.helper';
 
 function generateSecret(): string {
   return `whsec_${randomBytes(24).toString('base64url')}`;
@@ -22,7 +23,12 @@ function publicShape(w: Webhook) {
 
 @Injectable()
 export class WebhooksService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly log = new Logger(WebhooksService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly stalwart: StalwartWebhooksAdapter,
+  ) {}
 
   async list(workspaceId: string) {
     const items = await this.prisma.webhook.findMany({
@@ -34,16 +40,35 @@ export class WebhooksService {
 
   async create(workspaceId: string, actor: string, dto: CreateWebhookDto) {
     const secret = dto.secret ?? generateSecret();
+    const events = (dto.events ?? []) as WebhookEventType[];
+    const enabled = dto.enabled ?? true;
     const created = await this.prisma.webhook.create({
       data: {
         workspaceId,
         url: dto.url,
         description: dto.description ?? null,
-        events: (dto.events ?? []) as WebhookEventType[],
-        enabled: dto.enabled ?? true,
+        events,
+        enabled,
         secret,
       },
     });
+
+    let stalwartId: string | null = null;
+    if (this.stalwart.isConfigured()) {
+      stalwartId = await this.stalwart.create({
+        url: dto.url,
+        signatureKey: secret,
+        events,
+        enabled,
+        description: dto.description ?? null,
+      });
+      if (stalwartId) {
+        await this.prisma.webhook.update({
+          where: { id: created.id },
+          data: { stalwartId },
+        });
+      }
+    }
 
     await this.prisma.auditLog.create({
       data: {
@@ -52,7 +77,7 @@ export class WebhooksService {
         action: 'webhook.created',
         subjectType: 'Webhook',
         subjectId: created.id,
-        data: { url: created.url, events: created.events },
+        data: { url: created.url, events, stalwartId },
       },
     });
 
@@ -73,6 +98,38 @@ export class WebhooksService {
       },
     });
 
+    if (this.stalwart.isConfigured()) {
+      if (updated.stalwartId) {
+        const ok = await this.stalwart.update(updated.stalwartId, {
+          url: updated.url,
+          signatureKey: updated.secret,
+          events: updated.events,
+          enabled: updated.enabled,
+          description: updated.description,
+        });
+        if (!ok) {
+          this.log.warn(
+            `Webhook ${id} desincronizado do Stalwart (update falhou; stalwartId=${updated.stalwartId})`,
+          );
+        }
+      } else {
+        // Sem stalwartId — tenta criar agora (recuperação de falha anterior).
+        const newId = await this.stalwart.create({
+          url: updated.url,
+          signatureKey: updated.secret,
+          events: updated.events,
+          enabled: updated.enabled,
+          description: updated.description,
+        });
+        if (newId) {
+          await this.prisma.webhook.update({
+            where: { id },
+            data: { stalwartId: newId },
+          });
+        }
+      }
+    }
+
     await this.prisma.auditLog.create({
       data: {
         workspaceId,
@@ -91,6 +148,15 @@ export class WebhooksService {
     const existing = await this.prisma.webhook.findFirst({ where: { id, workspaceId } });
     if (!existing) throw new NotFoundException('Webhook não encontrado');
 
+    if (existing.stalwartId && this.stalwart.isConfigured()) {
+      const ok = await this.stalwart.destroy(existing.stalwartId);
+      if (!ok) {
+        this.log.warn(
+          `Webhook ${id} removido do hubmail mas Stalwart destroy falhou (stalwartId=${existing.stalwartId})`,
+        );
+      }
+    }
+
     await this.prisma.webhook.delete({ where: { id } });
     await this.prisma.auditLog.create({
       data: {
@@ -99,7 +165,7 @@ export class WebhooksService {
         action: 'webhook.deleted',
         subjectType: 'Webhook',
         subjectId: id,
-        data: { url: existing.url },
+        data: { url: existing.url, stalwartId: existing.stalwartId },
       },
     });
     return { ok: true };
@@ -110,7 +176,21 @@ export class WebhooksService {
     if (!existing) throw new NotFoundException('Webhook não encontrado');
 
     const secret = generateSecret();
-    await this.prisma.webhook.update({ where: { id }, data: { secret } });
+    const updated = await this.prisma.webhook.update({
+      where: { id },
+      data: { secret },
+    });
+
+    if (updated.stalwartId && this.stalwart.isConfigured()) {
+      await this.stalwart.update(updated.stalwartId, {
+        url: updated.url,
+        signatureKey: secret,
+        events: updated.events,
+        enabled: updated.enabled,
+        description: updated.description,
+      });
+    }
+
     await this.prisma.auditLog.create({
       data: {
         workspaceId,

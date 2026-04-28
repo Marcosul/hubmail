@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { TenancyModule } from '../tenancy/tenancy.module';
 import { WebhookDispatcherModule } from '../webhooks/webhook-dispatcher.module';
+import { StalwartAdapter } from '../domains/stalwart.helper';
+import { WorkspaceTenantService } from '../domains/workspace-tenant.service';
 import { CryptoService } from './crypto.service';
 import { HtmlSanitizerService } from './html-sanitizer.service';
 import { JmapClient } from './jmap.client';
@@ -26,6 +28,8 @@ import { SmtpService } from './smtp.service';
     MailGroupsService,
     MailService,
     MailStreamService,
+    StalwartAdapter,
+    WorkspaceTenantService,
   ],
   exports: [
     MailService,
@@ -35,6 +39,8 @@ import { SmtpService } from './smtp.service';
     SmtpService,
     JmapClient,
     MailStreamService,
+    StalwartAdapter,
+    WorkspaceTenantService,
   ],
 })
 export class MailModule {}

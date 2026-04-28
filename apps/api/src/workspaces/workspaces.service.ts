@@ -8,6 +8,7 @@ import {
 import { MembershipRole } from '@prisma/client';
 import type { User } from '@supabase/supabase-js';
 import { PrismaService } from '../prisma/prisma.service';
+import { WorkspaceTenantService } from '../domains/workspace-tenant.service';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
 
@@ -33,7 +34,10 @@ function slugify(input: string): string {
 export class WorkspacesService {
   private readonly log = new Logger(WorkspacesService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tenant: WorkspaceTenantService,
+  ) {}
 
   private async ensureProfile(userId: string): Promise<void> {
     await this.prisma.profile.upsert({
@@ -118,6 +122,13 @@ export class WorkspacesService {
     this.log.log(
       `${c.green}🏗️${c.reset}  workspace ${c.magenta}${created.workspace.slug}${c.reset} criado por ${c.cyan}${user.email ?? user.id}${c.reset}`,
     );
+
+    // Cria tenant correspondente no Stalwart (best-effort; backfill lazy cobre falhas).
+    try {
+      await this.tenant.ensureForWorkspace(created.workspace.id);
+    } catch (e) {
+      this.log.warn(`Falha ao provisionar tenant no Stalwart para workspace ${created.workspace.slug}: ${e}`);
+    }
 
     return this.toSummary(created.workspace, MembershipRole.OWNER, created.organization);
   }

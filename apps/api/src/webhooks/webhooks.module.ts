@@ -8,11 +8,12 @@ import { WebhookSignatureService } from './webhook-signature.service';
 import { WebhooksController } from './webhooks.controller';
 import { WebhooksService } from './webhooks.service';
 import { WebhookDispatcherModule } from './webhook-dispatcher.module';
+import { StalwartWebhooksAdapter } from './stalwart-webhooks.helper';
 
 @Module({
   imports: [AuthModule, TenancyModule, PrismaModule, MailModule, WebhookDispatcherModule],
   controllers: [MailWebhooksController, WebhooksController],
-  providers: [WebhookSignatureService, WebhooksService],
+  providers: [WebhookSignatureService, WebhooksService, StalwartWebhooksAdapter],
   exports: [WebhookSignatureService, WebhookDispatcherModule],
 })
 export class WebhooksModule {}

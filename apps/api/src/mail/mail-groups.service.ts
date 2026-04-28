@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { DomainStatus } from '@prisma/client';
 import { JmapClient, type JmapCredentials } from './jmap.client';
 import { PrismaService } from '../prisma/prisma.service';
+import { WorkspaceTenantService } from '../domains/workspace-tenant.service';
 
 const c = {
   reset: '\x1b[0m',
@@ -40,6 +41,7 @@ export class MailGroupsService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly jmap: JmapClient,
+    private readonly workspaceTenant: WorkspaceTenantService,
   ) {}
 
   private mgmt(): JmapCredentials {
@@ -236,21 +238,20 @@ export class MailGroupsService {
       creds,
     );
 
+    const tenantId = await this.workspaceTenant.ensureForWorkspace(workspaceId);
     const createKey = 'hubmailGroup';
+    const groupCreatePayload: Record<string, unknown> = {
+      '@type': 'Group',
+      name: principalName,
+      domainId: stalwartDomainId,
+      description: dto.description?.trim() || dto.name.trim(),
+      members: accountIds,
+    };
+    if (tenantId) groupCreatePayload.tenantId = tenantId;
     const setRes = await this.jmap.invokeStalwartManagement(creds, [
       [
         'x:Account/set',
-        {
-          create: {
-            [createKey]: {
-              '@type': 'Group',
-              name: principalName,
-              domainId: stalwartDomainId,
-              description: dto.description?.trim() || dto.name.trim(),
-              members: accountIds,
-            },
-          },
-        },
+        { create: { [createKey]: groupCreatePayload } },
         's-grp',
       ],
     ]);

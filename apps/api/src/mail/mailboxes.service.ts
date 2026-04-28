@@ -10,6 +10,7 @@ import { DomainStatus, MailCredentialKind } from '@prisma/client';
 import { JmapClient, type JmapCredentials } from './jmap.client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CryptoService } from './crypto.service';
+import { WorkspaceTenantService } from '../domains/workspace-tenant.service';
 
 const c = {
   reset: '\x1b[0m',
@@ -35,6 +36,7 @@ export class MailboxesService {
     private readonly crypto: CryptoService,
     private readonly config: ConfigService,
     private readonly jmap: JmapClient,
+    private readonly workspaceTenant: WorkspaceTenantService,
   ) {}
 
   private managementCreds(): JmapCredentials | null {
@@ -134,6 +136,7 @@ export class MailboxesService {
     emailAddress: string,
     principalName: string,
     displayName?: string,
+    tenantId?: string | null,
   ): Promise<{ secret: string; accountId: string }> {
     const [, domainName = ''] = emailAddress.split('@');
     const domainId = await this.stalwartFindDomainId(creds, domainName);
@@ -146,20 +149,18 @@ export class MailboxesService {
     let accountId = (await this.stalwartFindAccountByEmail(creds, emailAddress))?.id;
     if (!accountId) {
       const createKey = 'hubmailMailbox';
+      const createPayload: Record<string, unknown> = {
+        '@type': 'User',
+        name: principalName,
+        domainId,
+        description: displayName?.trim() || undefined,
+      };
+      if (tenantId) createPayload.tenantId = tenantId;
       const createCall = (): Promise<unknown[][]> =>
         this.jmap.invokeStalwartManagement(creds, [
           [
             'x:Account/set',
-            {
-              create: {
-                [createKey]: {
-                  '@type': 'User',
-                  name: principalName,
-                  domainId,
-                  description: displayName?.trim() || undefined,
-                },
-              },
-            },
+            { create: { [createKey]: createPayload } },
             's1',
           ],
         ]);
@@ -421,11 +422,13 @@ export class MailboxesService {
         'Defina STALWART_MANAGEMENT_EMAIL/PASSWORD para provisionar credenciais automaticamente.',
       );
     }
+    const tenantId = await this.workspaceTenant.ensureForWorkspace(workspaceId);
     const { secret: password, accountId } = await this.ensureStalwartMailboxSecret(
       mgmt,
       address,
       principalName,
       cleanDisplayName,
+      tenantId,
     );
     const secretRef = this.crypto.encrypt(password);
 

@@ -17,6 +17,7 @@ import type { StalwartDomainProvisionJob } from '../queue/queue.names';
 import { WebhookDispatcherService } from '../webhooks/webhook-dispatcher.service';
 import { DnsHelper } from './dns.helper';
 import { StalwartAdapter } from './stalwart.helper';
+import { WorkspaceTenantService } from './workspace-tenant.service';
 
 const DEFAULT_MAX_DOMAINS = 1;
 
@@ -49,6 +50,7 @@ export class DomainsService {
     private readonly dns: DnsHelper,
     private readonly queue: QueueService,
     private readonly webhookDispatcher: WebhookDispatcherService,
+    private readonly workspaceTenant: WorkspaceTenantService,
   ) {}
 
   async list(workspaceId: string) {
@@ -102,7 +104,7 @@ export class DomainsService {
       },
     });
 
-    const stalwart = await this.provisionEmailServer(normalized, aliasList, domain.id);
+    const stalwart = await this.provisionEmailServer(workspaceId, normalized, aliasList, domain.id);
 
     this.log.log(`Domain ${normalized} created for workspace ${workspaceId}`);
     return { id: domain.id, name: domain.name, status: domain.status, createdAt: domain.createdAt, stalwart };
@@ -144,7 +146,8 @@ export class DomainsService {
 
     if (this.emailServer.isConfigured()) {
       try {
-        const { zoneText, detail } = await this.emailServer.ensureDomain(domain.name, []);
+        const tenantId = await this.workspaceTenant.ensureForWorkspace(workspaceId);
+        const { zoneText, detail } = await this.emailServer.ensureDomain(domain.name, [], tenantId);
         if (detail && !zoneText) stalwartDetail = detail;
         stalwartZoneRaw = zoneText;
         const parsed = this.dns.parseZoneFileToRows(zoneText, domain.name);
@@ -439,7 +442,8 @@ export class DomainsService {
       throw new UnrecoverableError('Email server não configurado — job cancelado');
     }
 
-    const { id, detail } = await this.emailServer.ensureDomain(domain.name, data.aliases ?? []);
+    const tenantId = await this.workspaceTenant.ensureForWorkspace(domain.workspaceId);
+    const { id, detail } = await this.emailServer.ensureDomain(domain.name, data.aliases ?? [], tenantId);
     if (!id) throw new Error(detail ?? 'ensure_domain_failed');
 
     this.log.log(
@@ -448,6 +452,7 @@ export class DomainsService {
   }
 
   private async provisionEmailServer(
+    workspaceId: string,
     normalized: string,
     aliasList: string[],
     domainId: string,
@@ -462,7 +467,8 @@ export class DomainsService {
     }
 
     try {
-      const { id, detail } = await this.emailServer.ensureDomain(normalized, aliasList);
+      const tenantId = await this.workspaceTenant.ensureForWorkspace(workspaceId);
+      const { id, detail } = await this.emailServer.ensureDomain(normalized, aliasList, tenantId);
       if (id) {
         this.log.log(`\x1b[32m✅\x1b[0m Stalwart provisionado sync para \x1b[36m${normalized}\x1b[0m`);
         return { synced: true, id };

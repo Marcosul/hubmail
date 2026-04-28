@@ -10,8 +10,14 @@ export interface IEmailServerAdapter {
   /** Retorna true se credenciais de gestão estão configuradas. */
   isConfigured(): boolean;
 
+  /** Cria ou garante que o tenant existe no servidor, retornando o id. */
+  ensureTenant(name: string, description: string): Promise<string | null>;
+
+  /** Remove o tenant pelo id. */
+  deleteTenant(tenantId: string): Promise<{ ok: boolean; detail?: string }>;
+
   /** Cria ou garante que o domínio existe no servidor, retornando o zone file. */
-  ensureDomain(name: string, aliases: string[]): Promise<EnsureDomainResult>;
+  ensureDomain(name: string, aliases: string[], tenantId?: string | null): Promise<EnsureDomainResult>;
 
   /** Retorna as chaves DKIM publicadas para o domínio. */
   getDkimKeys(domainName: string): Promise<DkimKey[]>;

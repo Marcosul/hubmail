@@ -16,7 +16,105 @@ export class StalwartAdapter implements IEmailServerAdapter {
     return Boolean(this.creds());
   }
 
-  async ensureDomain(name: string, aliases: string[]): Promise<EnsureDomainResult> {
+  async ensureTenant(name: string, description: string): Promise<string | null> {
+    const creds = this.creds();
+    if (!creds) return null;
+
+    const normalized = name.trim();
+    const existing = await this.findTenantId(creds, normalized);
+    if (existing) {
+      this.log.debug(`Tenant ${normalized} já existe (id ${existing})`);
+      return existing;
+    }
+
+    const createKey = 'hubmailTenant';
+    try {
+      const setRes = await this.jmap.invokeStalwartManagement(creds, [
+        [
+          'x:Tenant/set',
+          {
+            create: {
+              [createKey]: {
+                name: normalized,
+                description: description.trim() || normalized,
+              },
+            },
+          },
+          't1',
+        ],
+      ]);
+      const payload = setRes.find((r) => r[0] === 'x:Tenant/set')?.[1] as {
+        created?: Record<string, { id?: string } | string>;
+        notCreated?: Record<string, { type?: string; description?: string }>;
+      };
+      const entry = payload?.created?.[createKey];
+      const id = typeof entry === 'string' ? entry : entry?.id;
+      if (id) {
+        this.log.log(
+          `\x1b[32m🏢\x1b[0m Tenant \x1b[36m${normalized}\x1b[0m criado no Stalwart (id \x1b[33m${id}\x1b[0m)`,
+        );
+        return id;
+      }
+      const err = this.extractSetError(payload);
+      this.log.warn(`Stalwart x:Tenant/set não criou ${normalized}${err ? `: ${err}` : ''}`);
+      // pode ter sido corrida — tenta achar por nome
+      return await this.findTenantId(creds, normalized);
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      this.log.error(`Falha ao criar tenant ${normalized} no Stalwart: ${detail}`);
+      return null;
+    }
+  }
+
+  async deleteTenant(tenantId: string): Promise<{ ok: boolean; detail?: string }> {
+    const creds = this.creds();
+    if (!creds) return { ok: false, detail: 'stalwart_not_configured' };
+
+    try {
+      const res = await this.jmap.invokeStalwartManagement(creds, [
+        ['x:Tenant/set', { destroy: [tenantId] }, 'td1'],
+      ]);
+      const payload = res.find((r) => r[0] === 'x:Tenant/set')?.[1] as {
+        destroyed?: string[];
+        notDestroyed?: Record<string, { type?: string; description?: string }>;
+      };
+      if (payload?.destroyed?.includes(tenantId)) {
+        this.log.log(`\x1b[31m🗑️\x1b[0m Tenant \x1b[33m${tenantId}\x1b[0m removido do Stalwart`);
+        return { ok: true };
+      }
+      const err = payload?.notDestroyed?.[tenantId];
+      const detail = err?.description ?? err?.type ?? 'destroy_failed';
+      return { ok: false, detail };
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      this.log.error(`Erro ao deletar tenant ${tenantId} no Stalwart: ${detail}`);
+      return { ok: false, detail };
+    }
+  }
+
+  private async findTenantId(creds: JmapCredentials, normalizedName: string): Promise<string | null> {
+    try {
+      const responses = await this.jmap.invokeStalwartManagement(creds, [
+        ['x:Tenant/query', { filter: { name: normalizedName }, limit: 50 }, 'qt1'],
+      ]);
+      const ids = (responses.find((r) => r[0] === 'x:Tenant/query')?.[1] as { ids?: string[] })?.ids ?? [];
+      if (!ids.length) return null;
+      const getRes = await this.jmap.invokeStalwartManagement(creds, [
+        ['x:Tenant/get', { ids }, 'gt1'],
+      ]);
+      const list =
+        (getRes.find((r) => r[0] === 'x:Tenant/get')?.[1] as {
+          list?: { id?: string; name?: string }[];
+        })?.list ?? [];
+      const hit = list.find((t) => (t.name ?? '').trim() === normalizedName);
+      return hit?.id ?? null;
+    } catch (e) {
+      this.log.debug(`findTenantId falhou para ${normalizedName}: ${e}`);
+      return null;
+    }
+  }
+
+  async ensureDomain(name: string, aliases: string[], tenantId?: string | null): Promise<EnsureDomainResult> {
     const creds = this.creds();
     if (!creds) return { id: null, zoneText: '', detail: 'stalwart_not_configured' };
 
@@ -33,6 +131,7 @@ export class StalwartAdapter implements IEmailServerAdapter {
         subAddressing: { '@type': 'Enabled' },
       };
       if (aliases.length > 0) createPayload.aliases = aliases;
+      if (tenantId) createPayload.tenantId = tenantId;
 
       const setRes = await this.jmap.invokeStalwartManagement(creds, [
         ['x:Domain/set', { create: { [createKey]: createPayload } }, 's1'],
