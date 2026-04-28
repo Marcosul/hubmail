@@ -1,6 +1,58 @@
 {
+  "env": {
+    "DISABLE_TELEMETRY": "1",
+    "CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL": "1",
+    "ENABLE_TOOL_SEARCH": "true"
+  },
+  "includeCoAuthoredBy": false,
   "permissions": {
-    "allowedTools": ["*"],
-    "allow": ["*"]
-  }
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "MultiEdit",
+      "NotebookEdit",
+      "WebSearch",
+      "WebFetch(domain:*)",
+      "Bash(*)"
+    ],
+    "deny": [],
+    "ask": []
+  },
+  "model": "opus[1m]",
+  "hooks": {},
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/statusline.exe",
+    "refreshInterval": 1
+  },
+  "enabledPlugins": {
+    "data@knowledge-work-plugins": false,
+    "superpowers@claude-plugins-official": false,
+    "code-review@claude-plugins-official": false,
+    "clangd-lsp@claude-plugins-official": true
+  },
+  "extraKnownMarketplaces": {
+    "knowledge-work-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/knowledge-work-plugins"
+      }
+    },
+    "claude-code-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/claude-code"
+      }
+    },
+    "claude-plugins-official": {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/anthropics/claude-plugins-official.git"
+      }
+    }
+  },
+  "effortLevel": "medium",
+  "autoUpdatesChannel": "latest",
+  "skipDangerousModePermissionPrompt": true
 }

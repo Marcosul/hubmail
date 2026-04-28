@@ -15,4 +15,13 @@ export interface IEmailServerAdapter {
 
   /** Retorna as chaves DKIM publicadas para o domínio. */
   getDkimKeys(domainName: string): Promise<DkimKey[]>;
+
+  /** Remove as assinaturas DKIM do domínio no servidor. */
+  deleteDomainDkim(domainName: string): Promise<{ ok: boolean; detail?: string; count?: number }>;
+
+  /** Remove o registro do domínio no servidor (DKIM deve ser removido antes). */
+  deleteDomainRecord(domainName: string): Promise<{ ok: boolean; detail?: string }>;
+
+  /** Remove uma conta (Principal/User) no servidor pelo id. */
+  deleteAccount(accountId: string): Promise<{ ok: boolean; detail?: string }>;
 }

@@ -1,4 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Res, UseGuards } from '@nestjs/common';
+import { Readable } from 'node:stream';
+import type { FastifyReply } from 'fastify';
 import { SupabaseJwtAuthGuard } from '../auth/guards/supabase-jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { WorkspaceGuard } from '../tenancy/workspace.guard';
@@ -43,11 +45,30 @@ export class DomainsController {
   }
 
   @Delete(':id')
-  remove(
+  async remove(
     @CurrentWorkspace() ws: WorkspaceContext,
     @CurrentUser() user: User,
     @Param('id') id: string,
+    @Res({ passthrough: false }) reply: FastifyReply,
   ) {
-    return this.domains.remove(ws.workspaceId, id, user.id);
+    const stream = new Readable({ read() {} });
+
+    (async () => {
+      try {
+        await this.domains.remove(ws.workspaceId, id, user.id, (evt) => {
+          stream.push(JSON.stringify(evt) + '\n');
+        });
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        stream.push(JSON.stringify({ step: 'error', detail }) + '\n');
+      } finally {
+        stream.push(null);
+      }
+    })();
+
+    reply.type('application/x-ndjson');
+    reply.header('Cache-Control', 'no-cache, no-transform');
+    reply.header('X-Accel-Buffering', 'no');
+    return reply.send(stream);
   }
 }

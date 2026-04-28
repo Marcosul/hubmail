@@ -69,6 +69,8 @@ export class StalwartAdapter implements IEmailServerAdapter {
       }
     }
 
+    await this.renameDkimSelectors(creds, id);
+
     const getRes = await this.jmap.invokeStalwartManagement(creds, [
       ['x:Domain/get', { ids: [id] }, 'g2'],
     ]);
@@ -79,6 +81,58 @@ export class StalwartAdapter implements IEmailServerAdapter {
     )?.list?.[0];
     const zoneText = unwrapText(domainObj?.dnsZoneFile);
     return { id, zoneText };
+  }
+
+  /**
+   * Renomeia selectors DKIM gerados automaticamente pelo Stalwart
+   * (ex.: v1-rsa-YYYYMMDD, v1-ed25519-YYYYMMDD) para o padrão hubmail:
+   * RSA → hubmail-rsa, ed25519 → hubmail-ed.
+   */
+  private async renameDkimSelectors(creds: JmapCredentials, domainId: string): Promise<void> {
+    try {
+      const responses = await this.jmap.invokeStalwartManagement(creds, [
+        ['x:DkimSignature/query', { filter: { domainId } }, 'q-dkim'],
+        [
+          'x:DkimSignature/get',
+          { '#ids': { resultOf: 'q-dkim', name: 'x:DkimSignature/query', path: '/ids' } },
+          'g-dkim',
+        ],
+      ]);
+      const list = (responses.find((r) => r[0] === 'x:DkimSignature/get')?.[1] as {
+        list?: { id?: string; selector?: string; '@type'?: string }[];
+      })?.list ?? [];
+
+      const update: Record<string, { selector: string }> = {};
+      for (const sig of list) {
+        if (!sig.id || !sig.selector) continue;
+        const type = (sig['@type'] || '').toLowerCase();
+        const desired = type.includes('ed25519') ? 'hubmail-ed' : 'hubmail-rsa';
+        if (sig.selector !== desired) update[sig.id] = { selector: desired };
+      }
+      if (Object.keys(update).length === 0) return;
+
+      const setRes = await this.jmap.invokeStalwartManagement(creds, [
+        ['x:DkimSignature/set', { update }, 's-dkim'],
+      ]);
+      const payload = setRes.find((r) => r[0] === 'x:DkimSignature/set')?.[1] as {
+        updated?: Record<string, unknown>;
+        notUpdated?: Record<string, { type?: string; description?: string }>;
+      };
+      const okCount = Object.keys(payload?.updated ?? {}).length;
+      const failCount = Object.keys(payload?.notUpdated ?? {}).length;
+      if (okCount > 0) {
+        this.log.log(
+          `\x1b[32m🔁\x1b[0m DKIM selectors renomeados: \x1b[32m${okCount}\x1b[0m atualizados${failCount ? `, \x1b[31m${failCount}\x1b[0m falharam` : ''}`,
+        );
+      }
+      if (failCount > 0) {
+        for (const [sid, err] of Object.entries(payload!.notUpdated!)) {
+          this.log.warn(`DKIM rename falhou para ${sid}: ${err?.description ?? err?.type ?? 'unknown'}`);
+        }
+      }
+    } catch (e) {
+      this.log.warn(`Falha ao renomear selectors DKIM (domainId=${domainId}): ${e}`);
+    }
   }
 
   async getDkimKeys(domainName: string): Promise<DkimKey[]> {
@@ -93,6 +147,8 @@ export class StalwartAdapter implements IEmailServerAdapter {
       }
 
       this.log.debug(`[DKIM] Query para domainId=${domainId}, domainName=${domainName}`);
+
+      await this.renameDkimSelectors(creds, domainId);
 
       const responses = await this.jmap.invokeStalwartManagement(creds, [
         [
@@ -193,6 +249,97 @@ export class StalwartAdapter implements IEmailServerAdapter {
       this.log.error(`❌ Falha ao buscar DKIM keys para ${domainName}:`, e);
       return [];
     }
+  }
+
+  async deleteDomainDkim(domainName: string): Promise<{ ok: boolean; detail?: string; count?: number }> {
+    const creds = this.creds();
+    if (!creds) return { ok: false, detail: 'stalwart_not_configured' };
+
+    const normalized = domainName.trim().toLowerCase();
+    const domainId = await this.findDomainId(creds, normalized);
+    if (!domainId) return { ok: true, count: 0 };
+
+    try {
+      const count = await this.destroyDkimSignatures(creds, domainId);
+      return { ok: true, count };
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      this.log.warn(`Falha ao remover assinaturas DKIM de ${normalized}: ${detail}`);
+      return { ok: false, detail };
+    }
+  }
+
+  async deleteDomainRecord(domainName: string): Promise<{ ok: boolean; detail?: string }> {
+    const creds = this.creds();
+    if (!creds) return { ok: false, detail: 'stalwart_not_configured' };
+
+    const normalized = domainName.trim().toLowerCase();
+    const domainId = await this.findDomainId(creds, normalized);
+    if (!domainId) return { ok: true };
+
+    try {
+      const res = await this.jmap.invokeStalwartManagement(creds, [
+        ['x:Domain/set', { destroy: [domainId] }, 'd1'],
+      ]);
+      const payload = res.find((r) => r[0] === 'x:Domain/set')?.[1] as {
+        destroyed?: string[];
+        notDestroyed?: Record<string, { type?: string; description?: string }>;
+      };
+      if (payload?.destroyed?.includes(domainId)) {
+        this.log.log(
+          `\x1b[31m🗑️\x1b[0m Domínio \x1b[36m${normalized}\x1b[0m removido do Stalwart (id \x1b[33m${domainId}\x1b[0m)`,
+        );
+        return { ok: true };
+      }
+      const err = payload?.notDestroyed?.[domainId];
+      const detail = err?.description ?? err?.type ?? 'destroy_failed';
+      this.log.warn(`Stalwart não removeu domínio ${normalized}: ${detail}`);
+      return { ok: false, detail };
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      this.log.error(`Erro ao deletar domínio ${normalized} no Stalwart: ${detail}`);
+      return { ok: false, detail };
+    }
+  }
+
+  async deleteAccount(accountId: string): Promise<{ ok: boolean; detail?: string }> {
+    const creds = this.creds();
+    if (!creds) return { ok: false, detail: 'stalwart_not_configured' };
+
+    try {
+      const res = await this.jmap.invokeStalwartManagement(creds, [
+        ['x:Account/set', { destroy: [accountId] }, 'p1'],
+      ]);
+      const payload = res.find((r) => r[0] === 'x:Account/set')?.[1] as {
+        destroyed?: string[];
+        notDestroyed?: Record<string, { type?: string; description?: string }>;
+      };
+      if (payload?.destroyed?.includes(accountId)) {
+        this.log.log(`\x1b[31m🗑️\x1b[0m Account \x1b[33m${accountId}\x1b[0m removida do Stalwart`);
+        return { ok: true };
+      }
+      const err = payload?.notDestroyed?.[accountId];
+      const detail = err?.description ?? err?.type ?? 'destroy_failed';
+      this.log.warn(`Stalwart não removeu account ${accountId}: ${detail}`);
+      return { ok: false, detail };
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      this.log.error(`Erro ao deletar account ${accountId} no Stalwart: ${detail}`);
+      return { ok: false, detail };
+    }
+  }
+
+  private async destroyDkimSignatures(creds: JmapCredentials, domainId: string): Promise<number> {
+    const responses = await this.jmap.invokeStalwartManagement(creds, [
+      ['x:DkimSignature/query', { filter: { domainId } }, 'q-dkim-del'],
+    ]);
+    const ids = (responses.find((r) => r[0] === 'x:DkimSignature/query')?.[1] as { ids?: string[] })?.ids ?? [];
+    if (ids.length === 0) return 0;
+    await this.jmap.invokeStalwartManagement(creds, [
+      ['x:DkimSignature/set', { destroy: ids }, 's-dkim-del'],
+    ]);
+    this.log.log(`\x1b[31m🧹\x1b[0m DKIM signatures removidas: \x1b[33m${ids.length}\x1b[0m`);
+    return ids.length;
   }
 
   private creds(): JmapCredentials | null {

@@ -17,6 +17,14 @@ import { StalwartAdapter } from './stalwart.helper';
 
 const DEFAULT_MAX_DOMAINS = 1;
 
+export type DomainDeleteEvent =
+  | { step: 'plan'; name: string; mailboxes: number; stalwart: boolean }
+  | { step: 'mailbox'; address: string; status: 'start' | 'done' | 'error' | 'skipped'; detail?: string }
+  | { step: 'dkim'; status: 'start' | 'done' | 'error'; count?: number; detail?: string }
+  | { step: 'domain_server'; status: 'start' | 'done' | 'error'; detail?: string }
+  | { step: 'database'; status: 'start' | 'done' }
+  | { step: 'complete'; mailboxesRemoved: number; stalwartErrors: string[] };
+
 export type DnsSetupRow = {
   id: string;
   label: string;
@@ -185,16 +193,59 @@ export class DomainsService {
     return { id: updated.id, name: updated.name, status: updated.status, dnsCheckedAt: updated.dnsCheckedAt };
   }
 
-  async remove(workspaceId: string, domainId: string, actor: string) {
+  async remove(
+    workspaceId: string,
+    domainId: string,
+    actor: string,
+    onEvent: (e: DomainDeleteEvent) => void = () => {},
+  ): Promise<{ ok: boolean; mailboxesRemoved: number; stalwartErrors: string[] }> {
     const domain = await this.prisma.domain.findFirst({
       where: { id: domainId, workspaceId },
-      include: { _count: { select: { mailboxes: true } } },
+      include: { mailboxes: { select: { id: true, address: true, stalwartAccountId: true } } },
     });
     if (!domain) throw new NotFoundException('Domínio não encontrado');
-    if (domain._count.mailboxes > 0) {
-      throw new BadRequestException('Remova todas as mailboxes deste domínio antes de excluí-lo');
+
+    const stalwartConfigured = this.emailServer.isConfigured();
+    const stalwartErrors: string[] = [];
+
+    onEvent({ step: 'plan', name: domain.name, mailboxes: domain.mailboxes.length, stalwart: stalwartConfigured });
+
+    if (stalwartConfigured) {
+      for (const mb of domain.mailboxes) {
+        onEvent({ step: 'mailbox', address: mb.address, status: 'start' });
+        if (!mb.stalwartAccountId) {
+          onEvent({ step: 'mailbox', address: mb.address, status: 'skipped' });
+          continue;
+        }
+        const r = await this.emailServer.deleteAccount(mb.stalwartAccountId);
+        if (r.ok) {
+          onEvent({ step: 'mailbox', address: mb.address, status: 'done' });
+        } else {
+          stalwartErrors.push(`${mb.address}: ${r.detail ?? 'falha'}`);
+          onEvent({ step: 'mailbox', address: mb.address, status: 'error', detail: r.detail });
+        }
+      }
+
+      onEvent({ step: 'dkim', status: 'start' });
+      const dkim = await this.emailServer.deleteDomainDkim(domain.name);
+      if (dkim.ok) {
+        onEvent({ step: 'dkim', status: 'done', count: dkim.count });
+      } else {
+        stalwartErrors.push(`dkim: ${dkim.detail ?? 'falha'}`);
+        onEvent({ step: 'dkim', status: 'error', detail: dkim.detail });
+      }
+
+      onEvent({ step: 'domain_server', status: 'start' });
+      const dom = await this.emailServer.deleteDomainRecord(domain.name);
+      if (dom.ok) {
+        onEvent({ step: 'domain_server', status: 'done' });
+      } else {
+        stalwartErrors.push(`domain: ${dom.detail ?? 'falha'}`);
+        onEvent({ step: 'domain_server', status: 'error', detail: dom.detail });
+      }
     }
 
+    onEvent({ step: 'database', status: 'start' });
     await this.prisma.domain.delete({ where: { id: domainId } });
     await this.prisma.auditLog.create({
       data: {
@@ -203,11 +254,23 @@ export class DomainsService {
         action: 'domain.deleted',
         subjectType: 'Domain',
         subjectId: domainId,
-        data: { name: domain.name },
+        data: {
+          name: domain.name,
+          mailboxesRemoved: domain.mailboxes.length,
+          stalwartErrors: stalwartErrors.length ? stalwartErrors : undefined,
+        },
       },
     });
+    onEvent({ step: 'database', status: 'done' });
 
-    return { ok: true };
+    this.log.log(
+      `\x1b[31m🗑️\x1b[0m Domínio \x1b[36m${domain.name}\x1b[0m removido (mailboxes: ${domain.mailboxes.length}` +
+        (stalwartErrors.length ? `, stalwart errors: ${stalwartErrors.length}` : '') +
+        `)`,
+    );
+
+    onEvent({ step: 'complete', mailboxesRemoved: domain.mailboxes.length, stalwartErrors });
+    return { ok: true, mailboxesRemoved: domain.mailboxes.length, stalwartErrors };
   }
 
   async getPlanInfo(workspaceId: string) {
@@ -256,21 +319,37 @@ export class DomainsService {
       return { synced: false };
     }
 
-    if (this.queue.isEnabled()) {
-      try {
-        await this.queue.enqueueStalwartDomainProvision({ domainId, aliases: aliasList });
-        this.log.log(`\x1b[32m🚀\x1b[0m Registro agendado via fila para \x1b[36m${normalized}\x1b[0m`);
-        return { synced: false, queued: true };
-      } catch {
-        this.log.warn(`\x1b[33m⚠️\x1b[0m Fila indisponível para ${normalized}. Tentando síncrono...`);
-      }
-    }
-
     try {
       const { id, detail } = await this.emailServer.ensureDomain(normalized, aliasList);
-      return id ? { synced: true, id } : { synced: false, detail };
+      if (id) {
+        this.log.log(`\x1b[32m✅\x1b[0m Stalwart provisionado sync para \x1b[36m${normalized}\x1b[0m`);
+        return { synced: true, id };
+      }
+      this.log.warn(
+        `\x1b[33m⚠️\x1b[0m ensureDomain síncrono não retornou id para ${normalized}${detail ? `: ${detail}` : ''}`,
+      );
+      return await this.queueAsFallback(normalized, aliasList, domainId, detail);
     } catch (e) {
-      return { synced: false, detail: e instanceof Error ? e.message : String(e) };
+      const detail = e instanceof Error ? e.message : String(e);
+      this.log.warn(`\x1b[33m⚠️\x1b[0m ensureDomain síncrono falhou para ${normalized}: ${detail}`);
+      return await this.queueAsFallback(normalized, aliasList, domainId, detail);
+    }
+  }
+
+  private async queueAsFallback(
+    normalized: string,
+    aliasList: string[],
+    domainId: string,
+    detail?: string,
+  ): Promise<{ synced: boolean; detail?: string; queued?: boolean }> {
+    if (!this.queue.isEnabled()) return { synced: false, detail };
+    try {
+      await this.queue.enqueueStalwartDomainProvision({ domainId, aliases: aliasList });
+      this.log.log(`\x1b[36m🚀\x1b[0m Registro agendado via fila para \x1b[36m${normalized}\x1b[0m (fallback)`);
+      return { synced: false, queued: true, detail };
+    } catch {
+      this.log.warn(`\x1b[33m⚠️\x1b[0m Fila também indisponível para ${normalized}.`);
+      return { synced: false, detail };
     }
   }
 

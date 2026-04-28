@@ -1,7 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/api/rest/generic";
+import { apiFetch, apiRequest, ApiError, getActiveWorkspaceId } from "@/api/rest/generic";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser-client";
 
 export interface Domain {
   id: string;
@@ -105,4 +106,85 @@ export function useDeleteDomain() {
       qc.invalidateQueries({ queryKey: PLAN_KEY });
     },
   });
+}
+
+export type DomainDeleteEvent =
+  | { step: "plan"; name: string; mailboxes: number; stalwart: boolean }
+  | { step: "mailbox"; address: string; status: "start" | "done" | "error" | "skipped"; detail?: string }
+  | { step: "dkim"; status: "start" | "done" | "error"; count?: number; detail?: string }
+  | { step: "domain_server"; status: "start" | "done" | "error"; detail?: string }
+  | { step: "database"; status: "start" | "done" }
+  | { step: "complete"; mailboxesRemoved: number; stalwartErrors: string[] }
+  | { step: "error"; detail: string };
+
+export async function deleteDomainStream(
+  id: string,
+  onEvent: (e: DomainDeleteEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const headers: Record<string, string> = {};
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data } = await supabase.auth.getSession();
+    if (data.session?.access_token) {
+      headers.Authorization = `Bearer ${data.session.access_token}`;
+    }
+  } catch {
+    /* ignore */
+  }
+  const ws = getActiveWorkspaceId();
+  if (ws) headers["X-Workspace-Id"] = ws;
+
+  const res = await apiFetch(`/api/domains/${id}`, {
+    method: "DELETE",
+    headers,
+    signal,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    let payload: unknown = text;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      /* keep text */
+    }
+    const message =
+      payload && typeof payload === "object" && "message" in payload
+        ? String((payload as { message: unknown }).message)
+        : text || `Request failed (${res.status})`;
+    throw new ApiError(message, res.status, payload);
+  }
+
+  if (!res.body) throw new Error("Stream sem corpo");
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let nl = buffer.indexOf("\n");
+    while (nl >= 0) {
+      const line = buffer.slice(0, nl).trim();
+      buffer = buffer.slice(nl + 1);
+      if (line) {
+        try {
+          onEvent(JSON.parse(line) as DomainDeleteEvent);
+        } catch {
+          /* skip malformed line */
+        }
+      }
+      nl = buffer.indexOf("\n");
+    }
+  }
+  const tail = buffer.trim();
+  if (tail) {
+    try {
+      onEvent(JSON.parse(tail) as DomainDeleteEvent);
+    } catch {
+      /* ignore */
+    }
+  }
 }
