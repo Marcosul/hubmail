@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTransport } from 'nodemailer';
 
-const FROM = '"HubMail" <no-reply@hubmail.to>';
+const DEFAULT_FROM = '"HubMail" <no-reply@hubmail.to>';
 
 const TEMPLATES_DIR = join(__dirname, 'templates');
 
@@ -152,8 +152,9 @@ export class NotificationMailService {
   private async deliver(to: string, subject: string, html: string) {
     const transport = this.transport();
     if (!transport) return;
+    const from = this.config.get<string>('NOTIFICATION_SMTP_FROM') ?? DEFAULT_FROM;
     try {
-      await transport.sendMail({ from: FROM, to, subject, html });
+      await transport.sendMail({ from, to, subject, html });
       this.log.log(`email transacional enviado → ${to} | ${subject.slice(0, 60)}`);
     } catch (err) {
       this.log.error(`falha ao enviar email para ${to}: ${String(err)}`);
