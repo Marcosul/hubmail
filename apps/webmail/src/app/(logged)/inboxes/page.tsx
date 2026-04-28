@@ -1,9 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { EllipsisVertical, KeyRound, Pencil, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { KeyRound, Pencil, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import {
+  ActionMenu,
+  DataList,
+  DataListError,
+  DataListLoading,
+  DataListPagination,
+  DataListToolbar,
+  type ActionMenuItem,
+} from "@/components/data-list";
 import { EditInboxDialog } from "@/components/inboxes/edit-inbox-dialog";
 import { InboxTableActionsCell } from "@/components/inboxes/inbox-table-actions-cell";
 import { InboxTableRow } from "@/components/inboxes/inbox-table-row";
@@ -24,51 +33,33 @@ export default function InboxesPage() {
   const { data: mailboxes, isLoading, isError } = useMailboxes();
   const rotateCredential = useRotateMailboxCredential();
   const removeMailbox = useDeleteMailbox();
-  const [openMenu, setOpenMenu] = useState<{ id: string; top: number; left: number } | null>(null);
   const [editingMailbox, setEditingMailbox] = useState<{ id: string; address: string } | null>(null);
   const [editingFull, setEditingFull] = useState<{ id: string; address: string } | null>(null);
   const [credentialUsername, setCredentialUsername] = useState("");
   const [credentialPassword, setCredentialPassword] = useState("");
   const [dialogError, setDialogError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const normalizedPassword = credentialPassword.trim();
   const canSubmitCredential = Boolean(editingMailbox) && normalizedPassword.length >= 6;
+
+  const filteredMailboxes = useMemo(() => {
+    if (!mailboxes) return [];
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return mailboxes;
+    return mailboxes.filter(
+      (m) =>
+        m.address.toLowerCase().includes(q) ||
+        (m.displayName ?? "").toLowerCase().includes(q) ||
+        m.domain.toLowerCase().includes(q),
+    );
+  }, [mailboxes, searchQuery]);
 
   function openCredentialDialog(mailbox: { id: string; address: string }) {
     setEditingMailbox(mailbox);
     setCredentialUsername(mailbox.address);
     setCredentialPassword("");
     setDialogError(null);
-    setOpenMenu(null);
   }
-
-  useEffect(() => {
-    if (!openMenu) return;
-
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (!target) return;
-      if (target.closest("[data-inbox-actions-menu]")) return;
-      if (target.closest("[data-inbox-actions-trigger]")) return;
-      setOpenMenu(null);
-    };
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpenMenu(null);
-    };
-
-    const closeOnViewportChange = () => setOpenMenu(null);
-
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("keydown", handleEscape);
-    window.addEventListener("scroll", closeOnViewportChange, true);
-    window.addEventListener("resize", closeOnViewportChange);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("keydown", handleEscape);
-      window.removeEventListener("scroll", closeOnViewportChange, true);
-      window.removeEventListener("resize", closeOnViewportChange);
-    };
-  }, [openMenu]);
 
   async function submitCredentialUpdate() {
     if (!editingMailbox) return;
@@ -96,7 +87,6 @@ export default function InboxesPage() {
     if (!confirmed) return;
     try {
       await removeMailbox.mutateAsync({ mailboxId: mailbox.id });
-      setOpenMenu(null);
     } catch {
       window.alert(copy.deleteMailboxError);
     }
@@ -135,137 +125,123 @@ export default function InboxesPage() {
         </>
       }
     >
-      <div className="overflow-hidden rounded-lg border border-neutral-200 dark:border-hub-border">
+      <DataList
+        toolbar={
+          <DataListToolbar
+            searchValue={searchQuery}
+            onSearchChange={setSearchQuery}
+            searchPlaceholder={`${copy.address}, ${copy.displayName} ou ${copy.domain}`}
+          />
+        }
+        footer={
+          <DataListPagination
+            summary={
+              <span className="text-xs">
+                {filteredMailboxes.length} {copy.count}
+              </span>
+            }
+          />
+        }
+      >
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead className="border-b border-neutral-200 bg-neutral-50 dark:border-hub-border dark:bg-[#141414]">
               <tr>
-              <th className="px-4 py-3 font-medium text-neutral-600 dark:text-neutral-400">{copy.address}</th>
-              <th className="px-4 py-3 font-medium text-neutral-600 dark:text-neutral-400">{copy.displayName}</th>
-              <th className="px-4 py-3 font-medium text-neutral-600 dark:text-neutral-400">{copy.domain}</th>
-              <th className="px-4 py-3 font-medium text-neutral-600 dark:text-neutral-400">{copy.credential}</th>
-              <th className="px-4 py-3 font-medium text-neutral-600 dark:text-neutral-400">{copy.created}</th>
-              <th className="w-12 px-4 py-3" aria-label={messages.common.actions} />
+                <th className="px-4 py-3 font-medium text-neutral-600 dark:text-neutral-400">{copy.address}</th>
+                <th className="px-4 py-3 font-medium text-neutral-600 dark:text-neutral-400">{copy.displayName}</th>
+                <th className="px-4 py-3 font-medium text-neutral-600 dark:text-neutral-400">{copy.domain}</th>
+                <th className="px-4 py-3 font-medium text-neutral-600 dark:text-neutral-400">{copy.credential}</th>
+                <th className="px-4 py-3 font-medium text-neutral-600 dark:text-neutral-400">{copy.created}</th>
+                <th className="w-12 px-4 py-3" aria-label={messages.common.actions} />
               </tr>
             </thead>
             <tbody>
-            {isLoading ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-neutral-500">
-                  {copy.loading}
-                </td>
-              </tr>
-            ) : isError ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-red-500">
-                  {copy.loadError}
-                </td>
-              </tr>
-            ) : mailboxes && mailboxes.length > 0 ? (
-              mailboxes.map((row) => (
-                <InboxTableRow key={row.id} inboxId={row.id} openFolder="inbox">
-                  <td className="px-4 py-3 font-mono text-xs text-neutral-900 dark:text-neutral-200">
-                    {row.address}
+              {isLoading ? (
+                <tr>
+                  <td colSpan={6}>
+                    <DataListLoading label={copy.loading} />
                   </td>
-                  <td className="px-4 py-3 text-neutral-700 dark:text-neutral-300">
-                    {row.displayName ?? "—"}
+                </tr>
+              ) : isError ? (
+                <tr>
+                  <td colSpan={6}>
+                    <DataListError label={copy.loadError} />
                   </td>
-                  <td className="px-4 py-3 text-neutral-500 dark:text-neutral-500">{row.domain}</td>
-                  <td className="px-4 py-3">
-                    {row.hasCredential ? (
-                      <span className="inline-flex rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-300">
-                        {copy.configured}
-                      </span>
-                    ) : (
-                      <span className="inline-flex rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-300">
-                        {copy.missing}
-                      </span>
-                    )}
+                </tr>
+              ) : filteredMailboxes.length > 0 ? (
+                filteredMailboxes.map((row) => {
+                  const menuItems: ActionMenuItem[] = [
+                    {
+                      key: "edit",
+                      label: copy.editInbox,
+                      icon: Pencil,
+                      onClick: () => setEditingFull({ id: row.id, address: row.address }),
+                    },
+                    {
+                      key: "credentials",
+                      label: copy.configureCredentials,
+                      icon: KeyRound,
+                      onClick: () => openCredentialDialog({ id: row.id, address: row.address }),
+                    },
+                    {
+                      key: "delete",
+                      label: copy.delete,
+                      icon: Trash2,
+                      danger: true,
+                      separatorAbove: true,
+                      onClick: () => handleDelete({ id: row.id, address: row.address }),
+                    },
+                  ];
+                  return (
+                    <InboxTableRow key={row.id} inboxId={row.id} openFolder="inbox">
+                      <td className="px-4 py-3 font-mono text-xs text-neutral-900 dark:text-neutral-200">
+                        {row.address}
+                      </td>
+                      <td className="px-4 py-3 text-neutral-700 dark:text-neutral-300">
+                        {row.displayName ?? "—"}
+                      </td>
+                      <td className="px-4 py-3 text-neutral-500 dark:text-neutral-500">{row.domain}</td>
+                      <td className="px-4 py-3">
+                        {row.hasCredential ? (
+                          <span className="inline-flex rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-300">
+                            {copy.configured}
+                          </span>
+                        ) : (
+                          <span className="inline-flex rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-300">
+                            {copy.missing}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-neutral-500 dark:text-neutral-500">
+                        {formatDate(row.createdAt, locale)}
+                      </td>
+                      <InboxTableActionsCell>
+                        <ActionMenu items={menuItems} ariaLabel={messages.common.actions} />
+                      </InboxTableActionsCell>
+                    </InboxTableRow>
+                  );
+                })
+              ) : mailboxes && mailboxes.length > 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-12 text-center text-neutral-500">
+                    Nenhuma inbox encontrada para &quot;{searchQuery}&quot;
                   </td>
-                  <td className="px-4 py-3 text-neutral-500 dark:text-neutral-500">
-                    {formatDate(row.createdAt, locale)}
+                </tr>
+              ) : (
+                <tr>
+                  <td colSpan={6} className="px-4 py-12 text-center text-neutral-500">
+                    {copy.emptyStart}
+                    <Link href="/inboxes/new" className="mx-1 font-medium underline">
+                      {copy.createInbox}
+                    </Link>
+                    {copy.emptyEnd}
                   </td>
-                  <InboxTableActionsCell>
-                    <div className="relative">
-                      <button
-                        type="button"
-                        data-inbox-actions-trigger
-                        className="rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-white/10"
-                        aria-label={messages.common.actions}
-                        onClick={(event) => {
-                          const rect = event.currentTarget.getBoundingClientRect();
-                          const menuWidth = 192;
-                          const left = Math.max(
-                            8,
-                            Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8),
-                          );
-                          const top = rect.bottom + 6;
-                          setOpenMenu((curr) =>
-                            curr?.id === row.id ? null : { id: row.id, top, left },
-                          );
-                        }}
-                      >
-                        <EllipsisVertical className="size-4" />
-                      </button>
-                      {openMenu?.id === row.id ? (
-                        <div
-                          data-inbox-actions-menu
-                          className="fixed z-40 min-w-48 rounded-md border border-neutral-200 bg-white p-1 shadow-lg dark:border-hub-border dark:bg-[#111]"
-                          style={{ top: openMenu.top, left: openMenu.left }}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingFull({ id: row.id, address: row.address });
-                              setOpenMenu(null);
-                            }}
-                            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-white/10"
-                          >
-                            <Pencil className="size-4" />
-                            {copy.editInbox}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openCredentialDialog({ id: row.id, address: row.address })}
-                            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-white/10"
-                          >
-                            <KeyRound className="size-4" />
-                            {copy.configureCredentials}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete({ id: row.id, address: row.address })}
-                            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
-                          >
-                            <Trash2 className="size-4" />
-                            {copy.delete}
-                          </button>
-                        </div>
-                      ) : null}
-                    </div>
-                  </InboxTableActionsCell>
-                </InboxTableRow>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-neutral-500">
-                  {copy.emptyStart}
-                  <Link href="/inboxes/new" className="mx-1 font-medium underline">
-                    {copy.createInbox}
-                  </Link>
-                  {copy.emptyEnd}
-                </td>
-              </tr>
-            )}
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
-        <div className="flex flex-col items-stretch justify-between gap-3 border-t border-neutral-200 px-4 py-3 text-sm text-neutral-500 dark:border-hub-border sm:flex-row sm:items-center">
-          <span>
-            {mailboxes?.length ?? 0} {copy.count}
-          </span>
-        </div>
-      </div>
+      </DataList>
       {editingFull ? (
         <EditInboxDialog
           mailboxId={editingFull.id}

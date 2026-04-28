@@ -1,11 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowRightLeft, CheckCircle2, Globe, Loader2, MoreVertical, Pencil, Plus, Settings, Trash2, CheckCircle, Clock, XCircle, Search, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { useState } from "react";
+import { AlertTriangle, ArrowRightLeft, CheckCircle2, Globe, Loader2, Pencil, Plus, Settings, Trash2, CheckCircle, Clock, XCircle, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { DomainSetupWizard } from "@/components/domains/domain-setup-wizard";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import {
+  ActionMenu,
+  DataList,
+  DataListEmpty,
+  DataListLoading,
+  DataListPagination,
+  DataListToolbar,
+  type ActionMenuItem,
+} from "@/components/data-list";
 import { useI18n } from "@/i18n/client";
 import {
   useDomains,
@@ -55,20 +64,6 @@ export default function DomainsPage() {
   const migrate = useMigrateDomain();
   const { data: workspaces } = useWorkspaces();
   const activeWorkspaceId = getActiveWorkspaceId();
-
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!openMenuId) return;
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpenMenuId(null);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [openMenuId]);
 
   const [migrateState, setMigrateState] = useState<{
     id: string;
@@ -289,12 +284,12 @@ export default function DomainsPage() {
         </div>
       ) : null}
 
-      <section className="flex flex-col overflow-hidden rounded-lg border border-neutral-200 dark:border-hub-border">
-        <div className="border-b border-neutral-200 bg-white p-3 dark:border-hub-border dark:bg-hub-card">
-          <div className="flex flex-col gap-2">
-            <div className="flex flex-col items-center gap-3 sm:flex-row">
-              {planInfo && (
-                <div className="flex shrink-0 items-center gap-2">
+      <DataList
+        toolbar={
+          <DataListToolbar
+            badge={
+              planInfo ? (
+                <>
                   <span className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
                     {planInfo.used} / {planInfo.limit}
                   </span>
@@ -306,24 +301,19 @@ export default function DomainsPage() {
                       }}
                     />
                   </div>
-                </div>
-              )}
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-neutral-400" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleAdd();
-                  }}
-                  placeholder="Procurar ou adicionar novo domínio..."
-                  className="w-full rounded-md border border-neutral-200 bg-neutral-50 py-2 pl-9 pr-4 text-sm text-neutral-900 focus:border-neutral-900 focus:outline-none dark:border-hub-border dark:bg-[#141414] dark:text-white dark:focus:border-white"
-                />
-              </div>
+                </>
+              ) : null
+            }
+            searchValue={searchQuery}
+            onSearchChange={(v) => {
+              setSearchQuery(v);
+              setCurrentPage(1);
+            }}
+            onSearchKeyDown={(e) => {
+              if (e.key === "Enter") handleAdd();
+            }}
+            searchPlaceholder="Procurar ou adicionar novo domínio..."
+            actions={
               <button
                 type="button"
                 onClick={handleAdd}
@@ -333,213 +323,143 @@ export default function DomainsPage() {
                 <Plus className="size-4" />
                 {create.isPending ? "…" : "Adicionar"}
               </button>
-            </div>
-            {atLimit && (
-              <p className="text-[10px] text-amber-600 dark:text-amber-400">
-                Limite atingido.{" "}
-                <Link
-                  href="/upgrade"
-                  className="font-semibold underline"
-                >
-                  Faça upgrade
-                </Link>{" "}
-                para adicionar mais domínios.
-              </p>
-            )}
-            {error && (
-              <p className="text-[10px] text-red-600 dark:text-red-400">{error}</p>
-            )}
-          </div>
-        </div>
-
-        <header className="hidden border-b border-neutral-200 bg-neutral-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:border-hub-border dark:bg-[#141414] dark:text-neutral-400 md:grid md:grid-cols-[1fr_140px_160px_minmax(200px,auto)]">
+            }
+            hint={
+              atLimit ? (
+                <span className="text-amber-600 dark:text-amber-400">
+                  Limite atingido.{" "}
+                  <Link href="/upgrade" className="font-semibold underline">
+                    Faça upgrade
+                  </Link>{" "}
+                  para adicionar mais domínios.
+                </span>
+              ) : error ? (
+                <span className="text-red-600 dark:text-red-400">{error}</span>
+              ) : null
+            }
+          />
+        }
+        footer={
+          <DataListPagination
+            summary={
+              totalPages > 1 ? (
+                <span className="text-xs">
+                  {common.page} <span className="font-medium">{currentPage}</span> {common.of}{" "}
+                  <span className="font-medium">{totalPages}</span>
+                </span>
+              ) : (
+                <span className="text-xs">
+                  {filteredDomains.length} domínio{filteredDomains.length !== 1 ? "s" : ""}
+                </span>
+              )
+            }
+            page={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+            previousLabel={common.previous}
+            nextLabel={common.next}
+          />
+        }
+      >
+        <header className="hidden border-b border-neutral-200 bg-neutral-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:border-hub-border dark:bg-[#141414] dark:text-neutral-400 md:grid md:grid-cols-[1fr_140px_160px_minmax(120px,auto)]">
           <span>Domínio</span>
           <span>Mailboxes</span>
           <span>Status</span>
           <span className="text-right">Ações</span>
         </header>
-
-        <div className="h-[calc(100vh-320px)] overflow-y-auto overscroll-contain">
+        <div className="max-h-[calc(100vh-360px)] overflow-y-auto overscroll-contain">
           {isLoading ? (
-            <p className="px-4 py-12 text-center text-sm text-neutral-500">
-              {messages.common.loading}
-            </p>
+            <DataListLoading label={messages.common.loading} />
           ) : !domains || domains.length === 0 ? (
-            <div className="flex flex-col items-center justify-center px-4 py-16 text-center">
-              <Globe
-                className="mb-4 size-12 text-neutral-300 dark:text-neutral-600"
-                aria-hidden
-              />
-              <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">
-                {copy.emptyTitle}
-              </h2>
-              <p className="mt-2 max-w-md text-sm text-neutral-500 dark:text-neutral-400">
-                {copy.emptyDescription}
-              </p>
-            </div>
+            <DataListEmpty
+              icon={Globe}
+              title={copy.emptyTitle}
+              description={copy.emptyDescription}
+            />
           ) : filteredDomains.length === 0 ? (
-            <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
-              <Search
-                className="mb-3 size-8 text-neutral-300 dark:text-neutral-600"
-                aria-hidden
-              />
-              <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                Nenhum domínio encontrado para &quot;{searchQuery}&quot;
-              </p>
-            </div>
+            <DataListEmpty
+              description={`Nenhum domínio encontrado para "${searchQuery}"`}
+            />
           ) : (
             <ul className="divide-y divide-neutral-200 dark:divide-hub-border">
-              {paginatedDomains.map((domain) => (
-                <li
-                  key={domain.id}
-                  className="grid grid-cols-1 gap-3 px-4 py-3 text-sm md:grid-cols-[1fr_140px_160px_minmax(200px,auto)] md:items-center"
-                >
-                  <div>
-                    <p className="font-medium text-neutral-900 dark:text-neutral-100">
-                      {domain.name}
-                    </p>
-                    {domain.dnsCheckedAt && (
-                      <p className="text-xs text-neutral-500">
-                        Verificado em{" "}
-                        {new Date(domain.dnsCheckedAt).toLocaleDateString()}
+              {paginatedDomains.map((domain) => {
+                const menuItems: ActionMenuItem[] = [
+                  {
+                    key: "edit",
+                    label: "Editar",
+                    icon: Pencil,
+                    onClick: () =>
+                      setWizard({ open: true, mode: "configure", id: domain.id, name: domain.name }),
+                  },
+                  {
+                    key: "settings",
+                    label: "Configurações",
+                    icon: Settings,
+                    onClick: () =>
+                      setWizard({ open: true, mode: "configure", id: domain.id, name: domain.name }),
+                  },
+                  {
+                    key: "migrate",
+                    label: "Migrar p/ workspace",
+                    icon: ArrowRightLeft,
+                    onClick: () =>
+                      setMigrateState({
+                        id: domain.id,
+                        name: domain.name,
+                        targetWorkspaceId: null,
+                        error: null,
+                        success: false,
+                      }),
+                  },
+                  {
+                    key: "delete",
+                    label: "Eliminar",
+                    icon: Trash2,
+                    danger: true,
+                    separatorAbove: true,
+                    onClick: () =>
+                      setDeleteState({
+                        id: domain.id,
+                        name: domain.name,
+                        mailboxCount: domain.mailboxCount,
+                        phase: "confirm",
+                        steps: [],
+                        error: null,
+                        summary: null,
+                      }),
+                  },
+                ];
+                return (
+                  <li
+                    key={domain.id}
+                    className="grid grid-cols-1 gap-3 px-4 py-3 text-sm md:grid-cols-[1fr_140px_160px_minmax(120px,auto)] md:items-center"
+                  >
+                    <div>
+                      <p className="font-medium text-neutral-900 dark:text-neutral-100">
+                        {domain.name}
                       </p>
-                    )}
-                  </div>
-                  <span className="text-xs text-neutral-600 dark:text-neutral-300">
-                    {domain.mailboxCount} mailbox
-                    {domain.mailboxCount !== 1 ? "es" : ""}
-                  </span>
-                  <StatusBadge status={domain.status} />
-                  <div className="relative flex items-center justify-end">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setOpenMenuId((cur) => (cur === domain.id ? null : domain.id))
-                      }
-                      title="Ações"
-                      aria-haspopup="menu"
-                      aria-expanded={openMenuId === domain.id}
-                      className="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-white/5 dark:hover:text-neutral-300"
-                    >
-                      <MoreVertical className="size-4" />
-                    </button>
-                    {openMenuId === domain.id ? (
-                      <div
-                        ref={menuRef}
-                        role="menu"
-                        className="absolute right-0 top-full z-20 mt-1 w-56 overflow-hidden rounded-md border border-neutral-200 bg-white py-1 shadow-lg dark:border-hub-border dark:bg-[#1a1a1a]"
-                      >
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => {
-                            setOpenMenuId(null);
-                            setWizard({
-                              open: true,
-                              mode: "configure",
-                              id: domain.id,
-                              name: domain.name,
-                            });
-                          }}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-white/5"
-                        >
-                          <Pencil className="size-4" />
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => {
-                            setOpenMenuId(null);
-                            setWizard({
-                              open: true,
-                              mode: "configure",
-                              id: domain.id,
-                              name: domain.name,
-                            });
-                          }}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-white/5"
-                        >
-                          <Settings className="size-4" />
-                          Configurações
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => {
-                            setOpenMenuId(null);
-                            setMigrateState({
-                              id: domain.id,
-                              name: domain.name,
-                              targetWorkspaceId: null,
-                              error: null,
-                              success: false,
-                            });
-                          }}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-white/5"
-                        >
-                          <ArrowRightLeft className="size-4" />
-                          Migrar p/ workspace
-                        </button>
-                        <div className="my-1 border-t border-neutral-200 dark:border-hub-border" />
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => {
-                            setOpenMenuId(null);
-                            setDeleteState({
-                              id: domain.id,
-                              name: domain.name,
-                              mailboxCount: domain.mailboxCount,
-                              phase: "confirm",
-                              steps: [],
-                              error: null,
-                              summary: null,
-                            });
-                          }}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
-                        >
-                          <Trash2 className="size-4" />
-                          Eliminar
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                </li>
-              ))}
+                      {domain.dnsCheckedAt && (
+                        <p className="text-xs text-neutral-500">
+                          Verificado em{" "}
+                          {new Date(domain.dnsCheckedAt).toLocaleDateString()}
+                        </p>
+                      )}
+                    </div>
+                    <span className="text-xs text-neutral-600 dark:text-neutral-300">
+                      {domain.mailboxCount} mailbox
+                      {domain.mailboxCount !== 1 ? "es" : ""}
+                    </span>
+                    <StatusBadge status={domain.status} />
+                    <div className="flex items-center justify-end">
+                      <ActionMenu items={menuItems} ariaLabel="Ações do domínio" />
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
-
-        {totalPages > 1 && (
-          <footer className="flex items-center justify-between border-t border-neutral-200 bg-neutral-50 px-4 py-3 dark:border-hub-border dark:bg-[#141414]">
-            <div className="text-xs text-neutral-500 dark:text-neutral-400">
-              {common.page} <span className="font-medium">{currentPage}</span> {common.of}{" "}
-              <span className="font-medium">{totalPages}</span>
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                className="inline-flex items-center gap-1 rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-hub-border dark:bg-hub-card dark:text-neutral-200 dark:hover:bg-white/5"
-              >
-                <ChevronLeft className="size-3.5" />
-                {common.previous}
-              </button>
-              <button
-                type="button"
-                disabled={currentPage === totalPages}
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                className="inline-flex items-center gap-1 rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-hub-border dark:bg-hub-card dark:text-neutral-200 dark:hover:bg-white/5"
-              >
-                {common.next}
-                <ChevronRight className="size-3.5" />
-              </button>
-            </div>
-          </footer>
-        )}
-      </section>
+      </DataList>
 
       {deleteState ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4">
