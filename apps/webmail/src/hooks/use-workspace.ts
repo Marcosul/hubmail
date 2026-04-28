@@ -10,6 +10,7 @@ import {
 import type {
   CreateWorkspaceInput,
   CreateWorkspaceInviteInput,
+  PublicInviteSummary,
   UpdateWorkspaceInput,
   WorkspaceMemberSummary,
   WorkspaceInviteSummary,
@@ -178,6 +179,16 @@ export function usePendingInvites() {
   return useQuery<PendingInviteSummary[]>({
     queryKey: PENDING_INVITES_KEY,
     queryFn: () => apiRequest<PendingInviteSummary[]>("/api/invites/pending"),
+  });
+}
+
+export function usePublicInvite(token: string | undefined) {
+  return useQuery<PublicInviteSummary>({
+    queryKey: ["public-invite", token ?? ""],
+    queryFn: () =>
+      apiRequest<PublicInviteSummary>(`/api/public/invites/${token}`, { skipAuth: true }),
+    enabled: !!token,
+    retry: false,
   });
 }
 

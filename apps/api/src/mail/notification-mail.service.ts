@@ -1,14 +1,74 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InviteScope, MembershipRole, ResourceRole } from '@prisma/client';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createTransport } from 'nodemailer';
 
 const FROM = '"HubMail" <no-reply@hubmail.to>';
 
+const TEMPLATES_DIR = join(__dirname, 'templates');
+
+const ROLE_LABEL_PT: Record<string, string> = {
+  OWNER: 'Proprietário',
+  ADMIN: 'Administrador',
+  MEMBER: 'Membro',
+  USER: 'Utilizador',
+};
+
+const SCOPE_INTRO_PT: Record<InviteScope, string> = {
+  WORKSPACE: 'colaborar num workspace',
+  DOMAIN: 'aceder a um domínio',
+  MAILBOX: 'aceder a uma conta de email',
+  MAIL_GROUP: 'aceder a um grupo de email',
+  WEBHOOK: 'aceder a um webhook',
+};
+
+const SCOPE_BODY_PT: Record<InviteScope, (resource: string | null, ws: string) => string> = {
+  WORKSPACE: (_r, ws) => `colaborar no workspace <strong>${escapeHtml(ws)}</strong>.`,
+  DOMAIN: (r, ws) =>
+    `aceder ao domínio <strong>${escapeHtml(r ?? '')}</strong> no workspace <strong>${escapeHtml(ws)}</strong>.`,
+  MAILBOX: (r, ws) =>
+    `aceder à conta <strong>${escapeHtml(r ?? '')}</strong> no workspace <strong>${escapeHtml(ws)}</strong>.`,
+  MAIL_GROUP: (r, ws) =>
+    `aceder ao grupo <strong>${escapeHtml(r ?? '')}</strong> no workspace <strong>${escapeHtml(ws)}</strong>.`,
+  WEBHOOK: (r, ws) =>
+    `aceder ao webhook <strong>${escapeHtml(r ?? '')}</strong> no workspace <strong>${escapeHtml(ws)}</strong>.`,
+};
+
+function escapeHtml(s: string) {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function loadTemplate(name: string): string {
+  return readFileSync(join(TEMPLATES_DIR, name), 'utf8');
+}
+
+function render(template: string, vars: Record<string, string>) {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? '');
+}
+
 @Injectable()
 export class NotificationMailService {
   private readonly log = new Logger(NotificationMailService.name);
+  private inviteTemplate: string | null = null;
+  private acceptedTemplate: string | null = null;
 
   constructor(private readonly config: ConfigService) {}
+
+  private loadInviteTemplate() {
+    if (!this.inviteTemplate) this.inviteTemplate = loadTemplate('invite.html');
+    return this.inviteTemplate;
+  }
+  private loadAcceptedTemplate() {
+    if (!this.acceptedTemplate) this.acceptedTemplate = loadTemplate('invite-accepted.html');
+    return this.acceptedTemplate;
+  }
 
   private transport() {
     const host = this.config.get<string>('NOTIFICATION_SMTP_HOST');
@@ -28,20 +88,37 @@ export class NotificationMailService {
     to: string;
     inviterName: string;
     workspaceName: string;
-    role: string;
+    role: MembershipRole | ResourceRole;
+    scope: InviteScope;
+    resourceLabel: string | null;
     message?: string | null;
     acceptUrl: string;
   }) {
-    const { to, inviterName, workspaceName, role, message, acceptUrl } = opts;
-    const subject = `${inviterName} convidou-o para o workspace "${workspaceName}"`;
-    const html = `
-      <p>Olá,</p>
-      <p><strong>${inviterName}</strong> convidou-o para colaborar no workspace
-         <strong>${workspaceName}</strong> com a função <strong>${role}</strong>.</p>
-      ${message ? `<blockquote>${message}</blockquote>` : ''}
-      <p><a href="${acceptUrl}" style="background:#4f46e5;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none">Aceitar convite</a></p>
-      <p style="color:#6b7280;font-size:12px">O convite expira em 7 dias. Se não reconhece este pedido, ignore este email.</p>
-    `;
+    const { to, inviterName, workspaceName, role, scope, resourceLabel, message, acceptUrl } =
+      opts;
+
+    const subject = scope === InviteScope.WORKSPACE
+      ? `${inviterName} convidou-o para o workspace "${workspaceName}"`
+      : `${inviterName} compartilhou um recurso consigo em "${workspaceName}"`;
+
+    const resourceLine = resourceLabel
+      ? `<div><strong style="color:#111827">Recurso:</strong> ${escapeHtml(resourceLabel)}</div>`
+      : '';
+    const messageBlock = message
+      ? `<div style="margin:16px 0;padding:14px 16px;background:#fef3c7;border-left:4px solid #f59e0b;border-radius:4px;font-size:14px;color:#78350f"><em>${escapeHtml(message)}</em></div>`
+      : '';
+
+    const html = render(this.loadInviteTemplate(), {
+      INVITER_NAME: escapeHtml(inviterName),
+      WORKSPACE_NAME: escapeHtml(workspaceName),
+      SCOPE_INTRO: SCOPE_INTRO_PT[scope] ?? '',
+      SCOPE_BODY: SCOPE_BODY_PT[scope](resourceLabel, workspaceName),
+      ROLE_LABEL: ROLE_LABEL_PT[role] ?? String(role),
+      RESOURCE_LINE: resourceLine,
+      MESSAGE_BLOCK: messageBlock,
+      ACCEPT_URL: acceptUrl,
+    });
+
     await this.deliver(to, subject, html);
   }
 
@@ -52,11 +129,10 @@ export class NotificationMailService {
   }) {
     const { to, acceptedBy, workspaceName } = opts;
     const subject = `${acceptedBy} aceitou o seu convite para "${workspaceName}"`;
-    const html = `
-      <p>Olá,</p>
-      <p><strong>${acceptedBy}</strong> aceitou o convite e é agora membro do workspace
-         <strong>${workspaceName}</strong>.</p>
-    `;
+    const html = render(this.loadAcceptedTemplate(), {
+      ACCEPTED_BY: escapeHtml(acceptedBy),
+      WORKSPACE_NAME: escapeHtml(workspaceName),
+    });
     await this.deliver(to, subject, html);
   }
 
@@ -64,7 +140,9 @@ export class NotificationMailService {
     to: string;
     inviterName: string;
     workspaceName: string;
-    role: string;
+    role: MembershipRole | ResourceRole;
+    scope: InviteScope;
+    resourceLabel: string | null;
     message?: string | null;
     acceptUrl: string;
   }) {

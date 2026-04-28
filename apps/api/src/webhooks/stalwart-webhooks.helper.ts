@@ -5,26 +5,35 @@ import { WebhookEventType } from '@prisma/client';
 
 /**
  * Mapeia o nosso enum para os event types nativos do Stalwart
- * (https://stalw.art/docs/ref/object/web-hook/). Stalwart enviará apenas
- * estes tipos para a URL configurada (eventsPolicy=include).
+ * (https://stalw.art/docs/ref/events/). Stalwart enviará apenas estes
+ * tipos para a URL configurada (eventsPolicy=include).
+ *
+ * DOMAIN_VERIFIED não tem equivalente — é disparado pela própria API
+ * hubmail e não pelo Stalwart.
  */
 const STALWART_EVENT_MAP: Record<WebhookEventType, string[]> = {
-  DOMAIN_VERIFIED: [], // não há equivalente direto no Stalwart
-  MESSAGE_RECEIVED: ['message-ingest.ham', 'delivery.success'],
-  MESSAGE_RECEIVED_BLOCKED: ['delivery.dsn-permanent', 'auth.banned'],
+  DOMAIN_VERIFIED: [],
+  MESSAGE_RECEIVED: ['message-ingest.ham'],
+  MESSAGE_RECEIVED_BLOCKED: ['message-ingest.error'],
   MESSAGE_RECEIVED_SPAM: ['message-ingest.spam'],
-  MESSAGE_SENT: ['delivery.attempt', 'queue.queue-message'],
-  MESSAGE_DELIVERED: ['delivery.success'],
-  MESSAGE_BOUNCED: ['delivery.failed', 'delivery.dsn-permanent'],
-  MESSAGE_COMPLAINED: ['incoming-report.arf'],
-  MESSAGE_REJECTED: ['delivery.dsn-permanent', 'queue.rejected'],
+  MESSAGE_SENT: ['delivery.completed'],
+  MESSAGE_DELIVERED: ['delivery.delivered'],
+  MESSAGE_BOUNCED: ['delivery.failed'],
+  MESSAGE_COMPLAINED: ['incoming-report.dmarc-report'],
+  MESSAGE_REJECTED: ['delivery.message-rejected'],
 };
 
-function mapEvents(events: WebhookEventType[]): string[] {
-  if (events.length === 0) return []; // todos
-  const out = new Set<string>();
-  for (const e of events) for (const s of STALWART_EVENT_MAP[e] ?? []) out.add(s);
-  return Array.from(out);
+/**
+ * Stalwart usa um Map<EventId, true> para o campo `events`. Convertemos a lista
+ * de eventos do hubmail para esse formato, mantendo apenas os eventos que têm
+ * equivalente nativo (eventos sem mapeamento são tratados internamente).
+ */
+function mapEvents(events: WebhookEventType[]): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  for (const e of events) {
+    for (const s of STALWART_EVENT_MAP[e] ?? []) out[s] = true;
+  }
+  return out;
 }
 
 interface UpsertInput {
@@ -63,12 +72,11 @@ export class StalwartWebhooksAdapter {
             create: {
               [createKey]: {
                 url: input.url,
-                signatureKey: input.signatureKey,
-                httpAuth: 'Unauthenticated',
+                signatureKey: { '@type': 'Value', secret: input.signatureKey },
+                httpAuth: { '@type': 'Unauthenticated' },
                 events: stalwartEvents,
-                eventsPolicy: stalwartEvents.length === 0 ? 'exclude' : 'include',
-                enabled: input.enabled,
-                ...(input.description ? { description: input.description } : {}),
+                eventsPolicy: 'include',
+                enable: input.enabled,
               },
             },
           },
@@ -116,13 +124,10 @@ export class StalwartWebhooksAdapter {
             update: {
               [stalwartId]: {
                 url: input.url,
-                signatureKey: input.signatureKey,
+                signatureKey: { '@type': 'Value', secret: input.signatureKey },
                 events: stalwartEvents,
-                eventsPolicy: stalwartEvents.length === 0 ? 'exclude' : 'include',
-                enabled: input.enabled,
-                ...(input.description !== undefined
-                  ? { description: input.description ?? '' }
-                  : {}),
+                eventsPolicy: 'include',
+                enable: input.enabled,
               },
             },
           },

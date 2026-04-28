@@ -70,6 +70,19 @@ enum WorkspaceInviteStatus {
   EXPIRED
 }
 
+enum InviteScope {
+  WORKSPACE
+  DOMAIN
+  MAILBOX
+  MAIL_GROUP
+  WEBHOOK
+}
+
+enum ResourceRole {
+  ADMIN
+  USER
+}
+
 enum WebhookEventType {
   DOMAIN_VERIFIED
   MESSAGE_RECEIVED
@@ -99,7 +112,11 @@ model Profile {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  memberships Membership[]
+  memberships    Membership[]
+  domainAccess   DomainAccess[]
+  mailboxAccess  MailboxAccess[]
+  groupAccess    MailGroupAccess[]
+  webhookAccess  WebhookAccess[]
 
   @@map("profiles")
 }
@@ -146,6 +163,10 @@ model Workspace {
   workspacePlan WorkspacePlan?
   webhooks     Webhook[]
   webhookEvents WebhookEvent[]
+  domainAccess  DomainAccess[]
+  mailboxAccess MailboxAccess[]
+  groupAccess   MailGroupAccess[]
+  webhookAccess WebhookAccess[]
 
   @@unique([organizationId, slug])
   @@index([createdAt])
@@ -170,23 +191,115 @@ model Membership {
 }
 
 model WorkspaceInvite {
-  id          String                @id @default(uuid()) @db.Uuid
-  workspaceId String                @map("workspace_id") @db.Uuid
-  email       String
-  role        MembershipRole        @default(MEMBER)
-  status      WorkspaceInviteStatus @default(PENDING)
-  token       String                @unique
-  expiresAt   DateTime              @map("expires_at")
-  message     String?               @db.VarChar(500)
-  invitedById String                @map("invited_by_id") @db.Uuid
-  createdAt   DateTime              @default(now()) @map("created_at")
-  updatedAt   DateTime              @updatedAt @map("updated_at")
+  id           String                @id @default(uuid()) @db.Uuid
+  workspaceId  String                @map("workspace_id") @db.Uuid
+  email        String
+  role         MembershipRole        @default(MEMBER)
+  status       WorkspaceInviteStatus @default(PENDING)
+  token        String                @unique
+  expiresAt    DateTime              @map("expires_at")
+  message      String?               @db.VarChar(500)
+  invitedById  String                @map("invited_by_id") @db.Uuid
+  scope        InviteScope           @default(WORKSPACE)
+  domainId     String?               @map("domain_id") @db.Uuid
+  mailboxId    String?               @map("mailbox_id") @db.Uuid
+  mailGroupId  String?               @map("mail_group_id") @db.Uuid
+  webhookId    String?               @map("webhook_id") @db.Uuid
+  resourceRole ResourceRole?         @map("resource_role")
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @updatedAt @map("updated_at")
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  domain    Domain?    @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  mailbox   Mailbox?   @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+  mailGroup MailGroup? @relation(fields: [mailGroupId], references: [id], onDelete: Cascade)
+  webhook   Webhook?   @relation(fields: [webhookId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, status])
   @@index([email, status])
+  @@index([scope, status])
+  @@index([status, expiresAt])
   @@map("workspace_invites")
+}
+
+// ---------------------------------------------------------------------------
+// Resource-level access grants (per-domain / per-mailbox / per-group / per-webhook)
+// ---------------------------------------------------------------------------
+
+model DomainAccess {
+  id          String       @id @default(uuid()) @db.Uuid
+  workspaceId String       @map("workspace_id") @db.Uuid
+  domainId    String       @map("domain_id") @db.Uuid
+  userId      String       @map("user_id") @db.Uuid
+  role        ResourceRole @default(USER)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt       @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  domain    Domain    @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  profile   Profile   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, domainId])
+  @@index([domainId])
+  @@index([workspaceId])
+  @@map("domain_access")
+}
+
+model MailboxAccess {
+  id          String       @id @default(uuid()) @db.Uuid
+  workspaceId String       @map("workspace_id") @db.Uuid
+  mailboxId   String       @map("mailbox_id") @db.Uuid
+  userId      String       @map("user_id") @db.Uuid
+  role        ResourceRole @default(USER)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt       @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  mailbox   Mailbox   @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+  profile   Profile   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, mailboxId])
+  @@index([mailboxId])
+  @@index([workspaceId])
+  @@map("mailbox_access")
+}
+
+model MailGroupAccess {
+  id          String       @id @default(uuid()) @db.Uuid
+  workspaceId String       @map("workspace_id") @db.Uuid
+  mailGroupId String       @map("mail_group_id") @db.Uuid
+  userId      String       @map("user_id") @db.Uuid
+  role        ResourceRole @default(USER)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt       @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  mailGroup MailGroup @relation(fields: [mailGroupId], references: [id], onDelete: Cascade)
+  profile   Profile   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, mailGroupId])
+  @@index([mailGroupId])
+  @@index([workspaceId])
+  @@map("mail_group_access")
+}
+
+model WebhookAccess {
+  id          String       @id @default(uuid()) @db.Uuid
+  workspaceId String       @map("workspace_id") @db.Uuid
+  webhookId   String       @map("webhook_id") @db.Uuid
+  userId      String       @map("user_id") @db.Uuid
+  role        ResourceRole @default(USER)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt       @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  webhook   Webhook   @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  profile   Profile   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, webhookId])
+  @@index([webhookId])
+  @@index([workspaceId])
+  @@map("webhook_access")
 }
 
 // ---------------------------------------------------------------------------
@@ -208,6 +321,8 @@ model Domain {
   mailboxes  Mailbox[]
   events     InboxEvent[]
   mailGroups MailGroup[]
+  invites    WorkspaceInvite[]
+  accesses   DomainAccess[]
 
   @@unique([workspaceId, name])
   @@index([status])
@@ -242,6 +357,8 @@ model Mailbox {
   index       MessageIndex[]
   savedLabels MailboxSavedLabel[]
   groupMemberships MailGroupMember[]
+  invites     WorkspaceInvite[]
+  accesses    MailboxAccess[]
 
   @@unique([workspaceId, address])
   @@index([domainId])
@@ -262,6 +379,8 @@ model MailGroup {
   workspace Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   domain    Domain             @relation(fields: [domainId], references: [id], onDelete: Cascade)
   members   MailGroupMember[]
+  invites   WorkspaceInvite[]
+  accesses  MailGroupAccess[]
 
   @@unique([workspaceId, address])
   @@index([domainId])
@@ -565,6 +684,8 @@ model Webhook {
 
   workspace Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   attempts  WebhookAttempt[]
+  invites   WorkspaceInvite[]
+  accesses  WebhookAccess[]
 
   @@index([workspaceId, enabled])
   @@map("webhooks")

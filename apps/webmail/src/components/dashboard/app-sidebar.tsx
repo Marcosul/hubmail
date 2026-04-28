@@ -168,7 +168,7 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
           aria-expanded={workspaceMenuOpen}
           aria-haspopup="true"
         >
-          <span className="truncate">{activeWorkspace?.organization?.name ?? "HubMail"}</span>
+          <span className="truncate">{activeWorkspace?.name ?? "HubMail"}</span>
           <ChevronDown className="size-4 shrink-0 opacity-60" aria-hidden />
         </button>
         <button

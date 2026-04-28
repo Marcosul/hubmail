@@ -8,6 +8,7 @@ import { InboxComposeTrigger } from "@/components/inboxes/inbox-compose-provider
 import { useMailFolders, useMailboxes, useThreads } from "@/hooks/use-mail";
 import { getLocaleDateFormat, useI18n } from "@/i18n/client";
 import type { AppLocale } from "@/i18n/config";
+import { compareFoldersByRole, getDisplayFolderName } from "@/lib/inbox-routes";
 import { cn } from "@/lib/utils";
 
 function formatRelative(dateString: string | Date, locale: AppLocale) {
@@ -41,7 +42,7 @@ export default function UnifiedInboxPage() {
 
   const sortedFolders = useMemo(() => {
     if (!folders) return [];
-    return [...folders].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    return [...folders].sort(compareFoldersByRole);
   }, [folders]);
 
   return (
@@ -88,7 +89,7 @@ export default function UnifiedInboxPage() {
                     : "text-neutral-600 hover:bg-neutral-200/60 dark:text-neutral-400 dark:hover:bg-white/5",
                 )}
               >
-                <span className="truncate">{folder.name}</span>
+                <span className="truncate">{getDisplayFolderName(folder, locale)}</span>
                 {badge > 0 ? (
                   <span className="ml-2 shrink-0 rounded bg-neutral-900 px-1.5 text-[10px] font-medium text-white dark:bg-white dark:text-neutral-900">
                     {badge}
@@ -136,7 +137,7 @@ export default function UnifiedInboxPage() {
                     >
                       {sortedFolders.map((folder) => (
                         <option key={folder.id} value={folder.id}>
-                          {folder.name}
+                          {getDisplayFolderName(folder, locale)}
                         </option>
                       ))}
                     </select>

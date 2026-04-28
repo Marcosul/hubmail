@@ -16,6 +16,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
 import { WorkspaceMembersModule } from './workspace-members/workspace-members.module';
 import { WorkspaceInvitesModule } from './workspace-invites/workspace-invites.module';
+import { ResourceAccessModule } from './resource-access/resource-access.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { WorkspaceInvitesModule } from './workspace-invites/workspace-invites.mo
     WorkspacesModule,
     WorkspaceMembersModule,
     WorkspaceInvitesModule,
+    ResourceAccessModule,
     MailModule,
     QueueModule,
     DomainsModule,

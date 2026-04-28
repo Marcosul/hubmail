@@ -29,7 +29,7 @@ export class WorkspaceInvitesController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Cria convite por email (OWNER/ADMIN)' })
+  @ApiOperation({ summary: 'Cria convite com escopo (workspace/domínio/conta/grupo/webhook)' })
   create(
     @CurrentUser() user: User,
     @Param('workspaceId') workspaceId: string,
@@ -77,6 +77,18 @@ export class InviteAcceptController {
   @Post(':token/accept')
   @ApiOperation({ summary: 'Aceita convite por token' })
   accept(@CurrentUser() user: User, @Param('token') token: string) {
-    return this.service.accept(token, user.id);
+    return this.service.accept(token, user.id, user.email ?? null);
+  }
+}
+
+@ApiTags('workspace-invites')
+@Controller('public/invites')
+export class PublicInviteController {
+  constructor(private readonly service: WorkspaceInvitesService) {}
+
+  @Get(':token')
+  @ApiOperation({ summary: 'Detalhes públicos do convite (sem autenticação)' })
+  getByToken(@Param('token') token: string) {
+    return this.service.getPublicByToken(token);
   }
 }

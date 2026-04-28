@@ -11,7 +11,6 @@ import {
 } from "@/hooks/use-webhooks";
 import { EventCheckboxTree } from "./event-checkbox-tree";
 import { ScopeSelector } from "./scope-selector";
-import { SecretDisplay } from "./secret-display";
 
 interface Props {
   initial?: {
@@ -41,7 +40,6 @@ export function EndpointForm({ initial }: Props) {
   const [inboxIds, setInboxIds] = useState<string[]>(initial?.inboxIds ?? []);
   const [clientId, setClientId] = useState(initial?.clientId ?? "");
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
-  const [createdSecret, setCreatedSecret] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const isEdit = Boolean(initial);
@@ -74,28 +72,11 @@ export function EndpointForm({ initial }: Props) {
         router.push("/webhooks/endpoints");
       } else {
         const res = await create.mutateAsync(payload);
-        setCreatedSecret(res.secret);
+        router.push(`/webhooks/endpoints/${res.id}`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : copy.createError);
     }
-  }
-
-  if (createdSecret) {
-    return (
-      <div className="space-y-4">
-        <SecretDisplay secret={createdSecret} />
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={() => router.push("/webhooks/endpoints")}
-            className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white dark:bg-white dark:text-neutral-900"
-          >
-            {copy.backToEndpoints}
-          </button>
-        </div>
-      </div>
-    );
   }
 
   return (

@@ -37,7 +37,12 @@ import { useMailFolders, useMailboxes, usePatchMessage, useThread, useThreads } 
 import { useMailStream } from "@/hooks/use-mail-stream";
 import { useI18n } from "@/i18n/client";
 import type { AppLocale } from "@/i18n/config";
-import { getFolderLabel, inboxFolderHref } from "@/lib/inbox-routes";
+import {
+  compareFoldersByRole,
+  getDisplayFolderName,
+  getFolderLabel,
+  inboxFolderHref,
+} from "@/lib/inbox-routes";
 import { cn } from "@/lib/utils";
 
 type InboxMailViewProps = {
@@ -717,7 +722,7 @@ function Content({ inboxId, folderSlug }: InboxMailViewProps) {
 
   const sortedFolders = useMemo(() => {
     if (!folders) return [];
-    return [...folders].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    return [...folders].sort(compareFoldersByRole);
   }, [folders]);
 
   const inboxAccountAddress = useMemo(
@@ -815,7 +820,7 @@ function Content({ inboxId, folderSlug }: InboxMailViewProps) {
                   )}
                   aria-hidden
                 />
-                <span className="min-w-0 flex-1 truncate">{f.name}</span>
+                <span className="min-w-0 flex-1 truncate">{getDisplayFolderName(f, locale)}</span>
                 {badge > 0 ? (
                   <span className="shrink-0 rounded bg-neutral-900 px-1.5 text-[10px] font-medium text-white dark:bg-white dark:text-neutral-900">
                     {badge}
@@ -850,7 +855,7 @@ function Content({ inboxId, folderSlug }: InboxMailViewProps) {
                 const mb = sidebarFolderBadge(folder, folderMatch?.id, folderListUnreadHint, folderListTotalHint);
                 return (
                   <option key={folder.id} value={folder.id}>
-                    {folder.name}
+                    {getDisplayFolderName(folder, locale)}
                     {mb > 0 ? ` (${mb})` : ""}
                   </option>
                 );
