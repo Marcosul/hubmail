@@ -158,7 +158,7 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
   const SidebarContent = () => (
     <>
       <div ref={workspaceMenuRef} className="relative flex h-14 items-center gap-2 border-b border-neutral-200 px-4 dark:border-hub-border">
-        <div className="flex size-8 items-center justify-center rounded-lg border border-neutral-200 bg-white text-neutral-900 dark:border-transparent dark:bg-transparent dark:text-white">
+        <div className="flex size-8 items-center justify-center text-neutral-900 dark:text-white">
           <HubMailMarkThemedTile className="size-4" />
         </div>
         <button
