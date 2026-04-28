@@ -90,7 +90,7 @@ export class MailboxesService {
   private async stalwartFindDomainId(creds: JmapCredentials, domainName: string): Promise<string | null> {
     const normalized = domainName.toLowerCase();
     const responses = await this.jmap.invokeStalwartManagement(creds, [
-      ['x:Domain/query', { filter: { text: normalized }, limit: 50 }, 'dq1'],
+      ['x:Domain/query', { filter: { name: normalized }, limit: 50 }, 'dq1'],
     ]);
     const qr = responses.find((r) => r[0] === 'x:Domain/query')?.[1] as { ids?: string[] };
     const ids = qr?.ids ?? [];

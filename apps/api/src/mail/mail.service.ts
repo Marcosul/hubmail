@@ -4,7 +4,8 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { OutgoingMessageStatus } from '@prisma/client';
+import { OutgoingMessageStatus, WebhookEventType } from '@prisma/client';
+import { WebhookDispatcherService } from '../webhooks/webhook-dispatcher.service';
 import type {
   EmailMessage,
   MailAddress,
@@ -82,6 +83,7 @@ export class MailService {
     private readonly smtp: SmtpService,
     private readonly sanitizer: HtmlSanitizerService,
     private readonly stream: MailStreamService,
+    private readonly webhookDispatcher: WebhookDispatcherService,
   ) {}
 
   private isJmapAuthError(error: unknown): boolean {
@@ -506,6 +508,25 @@ export class MailService {
         subject: dto.subject,
       }, actor);
       void this.stream.publish({ type: 'mail.sent', workspaceId, mailboxId: mailbox.id });
+      void this.webhookDispatcher
+        .dispatch({
+          workspaceId,
+          eventType: WebhookEventType.MESSAGE_SENT,
+          messageId: record.id,
+          payload: {
+            send: {
+              message_id: record.id,
+              inbox_id: mailbox.id,
+              recipients: dto.to,
+              timestamp: new Date().toISOString(),
+            },
+          },
+        })
+        .catch((err) =>
+          this.log.warn(
+            `webhook message.sent dispatch falhou: ${err instanceof Error ? err.message : 'unknown'}`,
+          ),
+        );
 
       const draftId = dto.draftEmailId?.trim();
       if (draftId) {
@@ -545,6 +566,21 @@ export class MailService {
           attempts: { increment: 1 },
         },
       });
+      void this.webhookDispatcher
+        .dispatch({
+          workspaceId,
+          eventType: WebhookEventType.MESSAGE_REJECTED,
+          messageId: record.id,
+          payload: {
+            reject: {
+              message_id: record.id,
+              inbox_id: mailbox.id,
+              reason: message,
+              timestamp: new Date().toISOString(),
+            },
+          },
+        })
+        .catch(() => {});
       if (this.isSmtpAuthError(error)) {
         throw new BadRequestException(
           'Credencial SMTP inválida/expirada para esta mailbox. Reconfigure a credencial e tente novamente.',

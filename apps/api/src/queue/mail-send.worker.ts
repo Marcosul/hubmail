@@ -8,12 +8,13 @@ import {
 } from '@nestjs/common';
 import { Worker, type Job } from 'bullmq';
 import type { Redis } from 'ioredis';
-import { OutgoingMessageStatus } from '@prisma/client';
+import { OutgoingMessageStatus, WebhookEventType } from '@prisma/client';
 import { REDIS_CONNECTION } from './redis.provider';
 import { QUEUE_NAMES, type MailSendRetryJob } from './queue.names';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailboxesService } from '../mail/mailboxes.service';
 import { SmtpService } from '../mail/smtp.service';
+import { WebhookDispatcherService } from '../webhooks/webhook-dispatcher.service';
 
 const c = {
   cyan: '\x1b[36m',
@@ -32,6 +33,7 @@ export class MailSendRetryWorker implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly mailboxes: MailboxesService,
     private readonly smtp: SmtpService,
+    private readonly webhookDispatcher: WebhookDispatcherService,
     @Optional() @Inject(REDIS_CONNECTION) private readonly redis: Redis | null,
   ) {}
 
@@ -100,6 +102,21 @@ export class MailSendRetryWorker implements OnModuleInit, OnModuleDestroy {
           lastError: null,
         },
       });
+      void this.webhookDispatcher
+        .dispatch({
+          workspaceId: msg.workspaceId,
+          eventType: WebhookEventType.MESSAGE_SENT,
+          messageId: msg.id,
+          payload: {
+            send: {
+              message_id: msg.id,
+              inbox_id: msg.mailboxId,
+              recipients: msg.toAddrs,
+              timestamp: new Date().toISOString(),
+            },
+          },
+        })
+        .catch(() => {});
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await this.prisma.outgoingMessage.update({
@@ -110,6 +127,21 @@ export class MailSendRetryWorker implements OnModuleInit, OnModuleDestroy {
           attempts: { increment: 1 },
         },
       });
+      void this.webhookDispatcher
+        .dispatch({
+          workspaceId: msg.workspaceId,
+          eventType: WebhookEventType.MESSAGE_REJECTED,
+          messageId: msg.id,
+          payload: {
+            reject: {
+              message_id: msg.id,
+              inbox_id: msg.mailboxId,
+              reason: message.slice(0, 500),
+              timestamp: new Date().toISOString(),
+            },
+          },
+        })
+        .catch(() => {});
       throw error;
     }
   }

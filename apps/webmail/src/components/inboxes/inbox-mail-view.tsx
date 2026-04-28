@@ -739,7 +739,7 @@ function Content({ inboxId, folderSlug }: InboxMailViewProps) {
           </li>
           <li className="flex items-center gap-1.5">
             <BreadcrumbGt />
-            <Link href="/dashboard/inboxes" className="hover:text-neutral-800 dark:hover:text-neutral-300">
+            <Link href="/inboxes" className="hover:text-neutral-800 dark:hover:text-neutral-300">
               {messages.dashboard.breadcrumbs.inboxes}
             </Link>
           </li>

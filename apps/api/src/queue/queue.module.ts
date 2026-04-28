@@ -9,10 +9,11 @@ import { QueueService } from './queue.service';
 import { REDIS_CONNECTION, createRedisConnection } from './redis.provider';
 import { MailModule } from '../mail/mail.module';
 import { AutomationsModule } from '../automations/automations.module';
+import { WebhookDispatcherModule } from '../webhooks/webhook-dispatcher.module';
 
 @Global()
 @Module({
-  imports: [MailModule, AutomationsModule, DomainsModule],
+  imports: [MailModule, AutomationsModule, DomainsModule, WebhookDispatcherModule],
   providers: [
     {
       provide: REDIS_CONNECTION,

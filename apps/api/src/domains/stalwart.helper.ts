@@ -351,7 +351,7 @@ export class StalwartAdapter implements IEmailServerAdapter {
 
   private async findDomainId(creds: JmapCredentials, normalizedName: string): Promise<string | null> {
     const responses = await this.jmap.invokeStalwartManagement(creds, [
-      ['x:Domain/query', { filter: { text: normalizedName }, limit: 50 }, 'q1'],
+      ['x:Domain/query', { filter: { name: normalizedName }, limit: 50 }, 'q1'],
     ]);
     const qr = responses.find((r) => r[0] === 'x:Domain/query')?.[1] as { ids?: string[] };
     const ids = qr?.ids ?? [];

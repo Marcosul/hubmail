@@ -12,12 +12,28 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { InboxEventType } from '@prisma/client';
+import { InboxEventType, WebhookEventType } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueueService } from '../queue/queue.service';
 import { MailStreamService } from '../mail/mail-stream.service';
 import { WebhookSignatureService } from './webhook-signature.service';
+import { WebhookDispatcherService } from './webhook-dispatcher.service';
+
+function inboxToWebhookType(t: InboxEventType): WebhookEventType | null {
+  switch (t) {
+    case InboxEventType.RECEIVED:
+      return WebhookEventType.MESSAGE_RECEIVED;
+    case InboxEventType.DELIVERED:
+      return WebhookEventType.MESSAGE_DELIVERED;
+    case InboxEventType.BOUNCED:
+      return WebhookEventType.MESSAGE_BOUNCED;
+    case InboxEventType.SPAM:
+      return WebhookEventType.MESSAGE_RECEIVED_SPAM;
+    default:
+      return null;
+  }
+}
 
 const c = {
   reset: '\x1b[0m',
@@ -89,6 +105,7 @@ export class MailWebhooksController {
     private readonly signatures: WebhookSignatureService,
     private readonly config: ConfigService,
     private readonly mailStream: MailStreamService,
+    private readonly dispatcher: WebhookDispatcherService,
   ) {}
 
   @Post('ingest/:domain')
@@ -199,6 +216,32 @@ export class MailWebhooksController {
             workspaceId: domainEntity.workspaceId,
             mailboxId,
           });
+        }
+        const webhookType = inboxToWebhookType(type);
+        if (webhookType) {
+          void this.dispatcher
+            .dispatch({
+              workspaceId: domainEntity.workspaceId,
+              eventType: webhookType,
+              messageId: String(messageId),
+              payload: {
+                message: {
+                  message_id: String(messageId),
+                  inbox_id: mailboxId ?? null,
+                  from: typeof evt.from === 'string' ? evt.from : null,
+                  to: typeof recipient === 'string' ? [recipient] : [],
+                  subject: typeof evt.subject === 'string' ? evt.subject : null,
+                  timestamp: new Date().toISOString(),
+                },
+              },
+            })
+            .catch((err) =>
+              this.log.error(
+                `Falha ao disparar webhook ${webhookType}: ${
+                  err instanceof Error ? err.message : 'unknown'
+                }`,
+              ),
+            );
         }
         accepted += 1;
         this.log.log(

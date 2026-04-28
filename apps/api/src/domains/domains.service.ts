@@ -7,11 +7,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DomainStatus } from '@prisma/client';
+import { DomainStatus, WebhookEventType } from '@prisma/client';
 import { UnrecoverableError } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueueService } from '../queue/queue.service';
 import type { StalwartDomainProvisionJob } from '../queue/queue.names';
+import { WebhookDispatcherService } from '../webhooks/webhook-dispatcher.service';
 import { DnsHelper } from './dns.helper';
 import { StalwartAdapter } from './stalwart.helper';
 
@@ -45,6 +46,7 @@ export class DomainsService {
     private readonly emailServer: StalwartAdapter,
     private readonly dns: DnsHelper,
     private readonly queue: QueueService,
+    private readonly webhookDispatcher: WebhookDispatcherService,
   ) {}
 
   async list(workspaceId: string) {
@@ -189,6 +191,30 @@ export class DomainsService {
       where: { id: domainId },
       data: { status, dnsCheckedAt: new Date() },
     });
+
+    if (verified && domain.status !== DomainStatus.VERIFIED) {
+      void this.webhookDispatcher
+        .dispatch({
+          workspaceId,
+          eventType: WebhookEventType.DOMAIN_VERIFIED,
+          payload: {
+            domain: {
+              domain_id: updated.id,
+              name: updated.name,
+              status: updated.status,
+              created_at: updated.createdAt.toISOString(),
+              updated_at: updated.updatedAt.toISOString(),
+            },
+          },
+        })
+        .catch((err) =>
+          this.log.error(
+            `Falha ao disparar webhook domain.verified: ${
+              err instanceof Error ? err.message : 'unknown'
+            }`,
+          ),
+        );
+    }
 
     return { id: updated.id, name: updated.name, status: updated.status, dnsCheckedAt: updated.dnsCheckedAt };
   }

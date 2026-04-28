@@ -4,6 +4,25 @@ import type { NextRequest } from "next/server";
 import { isFatalAuthSessionError } from "@/lib/supabase/auth-session-errors";
 import { createSupabaseMiddlewareClient } from "@/lib/supabase/middleware-client";
 
+const PROTECTED_PREFIXES = [
+  "/dashboard",
+  "/agents",
+  "/allow-block",
+  "/api-keys",
+  "/domains",
+  "/inboxes",
+  "/metrics",
+  "/pods",
+  "/upgrade",
+  "/webhooks",
+];
+
+function isProtectedPath(pathname: string): boolean {
+  return PROTECTED_PREFIXES.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
+}
+
 function normalizePathname(pathname: string) {
   try {
     return decodeURIComponent(pathname).replace(/\s+$/g, "");
@@ -21,17 +40,17 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  const isDashboardPath = pathname.startsWith("/dashboard");
+  const isProtected = isProtectedPath(pathname);
   const isLoginPath = pathname === "/login";
   const isCallbackPath = pathname.startsWith("/auth/callback");
 
-  if (!isDashboardPath && !isLoginPath && !isCallbackPath) {
+  if (!isProtected && !isLoginPath && !isCallbackPath) {
     return NextResponse.next();
   }
 
   const client = createSupabaseMiddlewareClient(request);
   if (!client) {
-    if (isDashboardPath) {
+    if (isProtected) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";
       url.searchParams.set("next", pathname);
@@ -63,7 +82,7 @@ export async function middleware(request: NextRequest) {
     return redirectRes;
   }
 
-  if (isDashboardPath && !user) {
+  if (isProtected && !user) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", pathname);
@@ -77,7 +96,7 @@ export async function middleware(request: NextRequest) {
       nextParam &&
       nextParam.startsWith("/") &&
       !nextParam.startsWith("//") &&
-      nextParam.startsWith("/dashboard")
+      isProtectedPath(nextParam)
     ) {
       url.pathname = nextParam;
     } else {
@@ -91,5 +110,18 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/login", "/auth/:path*"],
+  matcher: [
+    "/dashboard/:path*",
+    "/agents/:path*",
+    "/allow-block/:path*",
+    "/api-keys/:path*",
+    "/domains/:path*",
+    "/inboxes/:path*",
+    "/metrics/:path*",
+    "/pods/:path*",
+    "/upgrade/:path*",
+    "/webhooks/:path*",
+    "/login",
+    "/auth/:path*",
+  ],
 };

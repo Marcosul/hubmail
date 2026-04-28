@@ -201,7 +201,7 @@ export function DashboardOverview() {
                 <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{copy.latestThreads}</p>
               </div>
               <Link
-                href="/dashboard/inboxes/unified"
+                href="/inboxes/unified"
                 className="flex items-center gap-1 text-xs font-medium uppercase tracking-wide text-neutral-700 hover:text-neutral-950 dark:text-neutral-300 dark:hover:text-white"
               >
                 {copy.viewAll}
@@ -217,7 +217,7 @@ export function DashboardOverview() {
                 <Inbox className="mb-3 size-10 text-neutral-300 dark:text-neutral-600" aria-hidden />
                 <p className="font-medium text-neutral-800 dark:text-neutral-200">{inboxCopy.noMailbox}</p>
                 <Link
-                  href="/dashboard/inboxes/new"
+                  href="/inboxes/new"
                   className="mt-4 rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-neutral-900"
                 >
                   {inboxCopy.associateMailbox}
@@ -263,7 +263,7 @@ export function DashboardOverview() {
                     </span>
                   </span>
                   <Link
-                    href="/dashboard/upgrade"
+                    href="/upgrade"
                     className="rounded border border-amber-600/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700 hover:bg-amber-500/20 dark:text-amber-400"
                   >
                     {copy.upgrade}
@@ -333,7 +333,7 @@ function OverviewThreadRow({
 }) {
   return (
     <Link
-      href={`/dashboard/inboxes/${encodeURIComponent(mailboxId)}/inbox?threadId=${encodeURIComponent(thread.id)}`}
+      href={`/inboxes/${encodeURIComponent(mailboxId)}/inbox?threadId=${encodeURIComponent(thread.id)}`}
       className={cn(
         "flex items-start gap-3 px-1 py-2.5 text-left text-sm hover:bg-neutral-50 dark:hover:bg-white/5",
         thread.unread && "bg-neutral-50/70 font-medium dark:bg-white/[0.03]",

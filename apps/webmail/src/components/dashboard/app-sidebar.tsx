@@ -40,14 +40,14 @@ import { WorkspaceMembersDialog } from "@/components/workspace/workspace-members
 
 const nav = [
   { href: "/dashboard", labelKey: "overview", icon: LayoutDashboard, exact: true },
-  { href: "/dashboard/inboxes", labelKey: "inboxes", icon: Inbox },
-  { href: "/dashboard/domains", labelKey: "domains", icon: Globe },
-  { href: "/dashboard/webhooks", labelKey: "webhooks", icon: Webhook },
-  { href: "/dashboard/agents", labelKey: "agents", icon: Bot },
-  { href: "/dashboard/api-keys", labelKey: "apiKeys", icon: KeyRound },
-  { href: "/dashboard/allow-block", labelKey: "allowBlock", icon: ListFilter },
-  { href: "/dashboard/metrics", labelKey: "metrics", icon: BarChart3 },
-  { href: "/dashboard/pods", labelKey: "pods", icon: Leaf },
+  { href: "/inboxes", labelKey: "inboxes", icon: Inbox },
+  { href: "/domains", labelKey: "domains", icon: Globe },
+  { href: "/webhooks", labelKey: "webhooks", icon: Webhook },
+  { href: "/agents", labelKey: "agents", icon: Bot },
+  { href: "/api-keys", labelKey: "apiKeys", icon: KeyRound },
+  { href: "/allow-block", labelKey: "allowBlock", icon: ListFilter },
+  { href: "/metrics", labelKey: "metrics", icon: BarChart3 },
+  { href: "/pods", labelKey: "pods", icon: Leaf },
 ] as const;
 
 type AppSidebarProps = {
@@ -289,11 +289,11 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
 
       <div className="space-y-1 border-t border-neutral-200 p-3 dark:border-hub-border">
         <Link
-          href="/dashboard/upgrade"
+          href="/upgrade"
           onClick={() => setMobileOpen(false)}
           className={cn(
             "flex items-center gap-2 rounded-md px-3 py-1.5 text-xs transition-colors",
-            isActive("/dashboard/upgrade")
+            isActive("/upgrade")
               ? "bg-neutral-200/90 font-medium text-neutral-950 dark:bg-white/10 dark:text-white"
               : "text-neutral-600 hover:bg-neutral-200/60 dark:text-neutral-400 dark:hover:bg-white/5",
           )}

@@ -70,6 +70,24 @@ enum WorkspaceInviteStatus {
   EXPIRED
 }
 
+enum WebhookEventType {
+  DOMAIN_VERIFIED
+  MESSAGE_RECEIVED
+  MESSAGE_RECEIVED_BLOCKED
+  MESSAGE_RECEIVED_SPAM
+  MESSAGE_SENT
+  MESSAGE_DELIVERED
+  MESSAGE_BOUNCED
+  MESSAGE_COMPLAINED
+  MESSAGE_REJECTED
+}
+
+enum WebhookAttemptStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
 // ---------------------------------------------------------------------------
 // Core: profile (Supabase user metadata shadow)
 // ---------------------------------------------------------------------------
@@ -124,6 +142,8 @@ model Workspace {
   agents       Agent[]
   budget       Budget?
   workspacePlan WorkspacePlan?
+  webhooks     Webhook[]
+  webhookEvents WebhookEvent[]
 
   @@unique([organizationId, slug])
   @@index([createdAt])
@@ -473,6 +493,65 @@ model Plan {
   workspacePlans WorkspacePlan[]
 
   @@map("plans")
+}
+
+// ---------------------------------------------------------------------------
+// Webhooks: outbound delivery to user-configured endpoints
+// ---------------------------------------------------------------------------
+
+model Webhook {
+  id          String             @id @default(uuid()) @db.Uuid
+  workspaceId String             @map("workspace_id") @db.Uuid
+  url         String
+  description String?            @db.VarChar(500)
+  secret      String
+  events      WebhookEventType[] @default([])
+  enabled     Boolean            @default(true)
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
+
+  workspace Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  attempts  WebhookAttempt[]
+
+  @@index([workspaceId, enabled])
+  @@map("webhooks")
+}
+
+model WebhookEvent {
+  id          String           @id @default(uuid()) @db.Uuid
+  workspaceId String           @map("workspace_id") @db.Uuid
+  eventType   WebhookEventType @map("event_type")
+  messageId   String?          @map("message_id")
+  payload     Json             @default("{}")
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  attempts  WebhookAttempt[]
+
+  @@index([workspaceId, createdAt])
+  @@index([eventType])
+  @@map("webhook_events")
+}
+
+model WebhookAttempt {
+  id           String               @id @default(uuid()) @db.Uuid
+  webhookId    String               @map("webhook_id") @db.Uuid
+  eventId      String               @map("event_id") @db.Uuid
+  url          String
+  status       WebhookAttemptStatus @default(PENDING)
+  statusCode   Int?                 @map("status_code")
+  responseBody String?              @map("response_body") @db.VarChar(2000)
+  errorMessage String?              @map("error_message") @db.VarChar(1000)
+  attempt      Int                  @default(1)
+  durationMs   Int?                 @map("duration_ms")
+  createdAt    DateTime             @default(now()) @map("created_at")
+
+  webhook Webhook      @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  event   WebhookEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId, createdAt])
+  @@index([eventId])
+  @@map("webhook_attempts")
 }
 
 model WorkspacePlan {

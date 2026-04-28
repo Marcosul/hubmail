@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { TenancyModule } from '../tenancy/tenancy.module';
+import { WebhookDispatcherModule } from '../webhooks/webhook-dispatcher.module';
 import { CryptoService } from './crypto.service';
 import { HtmlSanitizerService } from './html-sanitizer.service';
 import { JmapClient } from './jmap.client';
@@ -12,7 +13,7 @@ import { MailboxesService } from './mailboxes.service';
 import { SmtpService } from './smtp.service';
 
 @Module({
-  imports: [AuthModule, TenancyModule],
+  imports: [AuthModule, TenancyModule, WebhookDispatcherModule],
   controllers: [MailboxesController, MailController],
   providers: [
     CryptoService,

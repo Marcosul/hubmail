@@ -36,11 +36,17 @@ export function DashboardShell({
     const parts = pathname.split("/").filter(Boolean);
     const breadcrumbs = messages.dashboard.breadcrumbs;
     const out: { label: string; href?: string }[] = [{ label: messages.dashboard.dashboard, href: "/dashboard" }];
-    if (parts[0] === "dashboard" && parts[1]) {
+    if (parts[0] && parts[0] !== "dashboard") {
       out.push({
-        label: breadcrumbs[parts[1] as keyof typeof breadcrumbs] ?? titleCase(parts[1]),
-        href: `/dashboard/${parts[1]}`,
+        label: breadcrumbs[parts[0] as keyof typeof breadcrumbs] ?? titleCase(parts[0]),
+        href: `/${parts[0]}`,
       });
+      if (parts[1]) {
+        out.push({
+          label: breadcrumbs[parts[1] as keyof typeof breadcrumbs] ?? titleCase(parts[1]),
+          href: parts[2] ? `/${parts[0]}/${parts[1]}` : undefined,
+        });
+      }
       if (parts[2]) {
         out.push({ label: breadcrumbs[parts[2] as keyof typeof breadcrumbs] ?? titleCase(parts[2]) });
       }

@@ -1,7 +1,7 @@
 import type { MailFolderSummary } from "@hubmail/types";
 
 /**
- * Inbox + folder URLs: `/dashboard/inboxes/{inboxId}/{folderSlug}` (inboxId URL-encoded).
+ * Inbox + folder URLs: `/inboxes/{inboxId}/{folderSlug}` (inboxId URL-encoded).
  */
 export const INBOX_FOLDER_SLUGS = [
   "inbox",
@@ -65,7 +65,7 @@ export function getFolderLabel(slug: string, locale: FolderLocale = "pt-BR"): st
 }
 
 export function inboxFolderHref(inboxId: string, folderSlug: string) {
-  return `/dashboard/inboxes/${encodeURIComponent(inboxId)}/${folderSlug}`;
+  return `/inboxes/${encodeURIComponent(inboxId)}/${folderSlug}`;
 }
 
 /** Slug da pasta Enviados para navegação (JMAP `role: sent` ou nomes como "Sent Items"). */
