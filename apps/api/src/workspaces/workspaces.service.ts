@@ -208,31 +208,77 @@ export class WorkspacesService {
     return this.toSummary(updated, membership.role, updated.organization);
   }
 
+  async countResources(user: User, id: string) {
+    const membership = await this.prisma.membership.findFirst({
+      where: { userId: user.id, workspaceId: id, workspace: { deletedAt: null } },
+    });
+    if (!membership) throw new NotFoundException('Workspace não encontrado');
+
+    const [domains, mailboxes, webhooks] = await Promise.all([
+      this.prisma.domain.count({ where: { workspaceId: id } }),
+      this.prisma.mailbox.count({ where: { workspaceId: id } }),
+      this.prisma.webhook.count({ where: { workspaceId: id } }),
+    ]);
+
+    return { domains, mailboxes, webhooks };
+  }
+
   async remove(user: User, id: string) {
     const membership = await this.prisma.membership.findFirst({
       where: { userId: user.id, workspaceId: id, workspace: { deletedAt: null } },
+      include: { workspace: true },
     });
     if (!membership) throw new NotFoundException('Workspace não encontrado');
     if (membership.role !== MembershipRole.OWNER) {
       throw new ForbiddenException('Apenas o OWNER pode apagar o workspace');
     }
 
-    await this.prisma.workspace.update({
-      where: { id },
-      data: { deletedAt: new Date() },
+    const workspace = membership.workspace;
+
+    // Deletar recursos em cascata em transação
+    await this.prisma.$transaction(async (tx) => {
+      // Deletar Stalwart tenant se existir
+      if (workspace.stalwartTenantId) {
+        try {
+          // TODO: Implementar chamada para deletar tenant no Stalwart
+          // await this.stalwart.deleteTenant(workspace.stalwartTenantId);
+          this.log.log(
+            `${c.cyan}🔗${c.reset}  tenant Stalwart ${workspace.stalwartTenantId} seria deletado (TODO)`,
+          );
+        } catch (e) {
+          this.log.warn(`Falha ao deletar tenant Stalwart: ${e}`);
+        }
+      }
+
+      // Deletar em cascata (Prisma faz cascata automática)
+      await tx.webhook.deleteMany({ where: { workspaceId: id } });
+      await tx.mailbox.deleteMany({ where: { workspaceId: id } });
+      await tx.domain.deleteMany({ where: { workspaceId: id } });
+      await tx.automation.deleteMany({ where: { workspaceId: id } });
+      await tx.agent.deleteMany({ where: { workspaceId: id } });
+      await tx.apiKey.deleteMany({ where: { workspaceId: id } });
+      await tx.outgoingMessage.deleteMany({ where: { workspaceId: id } });
+      await tx.inboxEvent.deleteMany({ where: { workspaceId: id } });
+
+      // Hard delete do workspace
+      await tx.workspace.delete({ where: { id } });
+
+      // Registro de auditoria
+      await tx.auditLog.create({
+        data: {
+          workspaceId: id,
+          actor: user.id,
+          action: 'workspace.hard_deleted',
+          subjectType: 'Workspace',
+          subjectId: id,
+          data: { workspaceName: workspace.name, workspaceSlug: workspace.slug },
+        },
+      });
     });
 
-    await this.prisma.auditLog.create({
-      data: {
-        workspaceId: id,
-        actor: user.id,
-        action: 'workspace.deleted',
-        subjectType: 'Workspace',
-        subjectId: id,
-      },
-    });
-
-    this.log.log(`${c.yellow}🗑️${c.reset}  workspace ${id} marcado como deletado`);
+    this.log.log(
+      `${c.yellow}🗑️${c.reset}  workspace ${c.magenta}${workspace.slug}${c.reset} apagado permanentemente`,
+    );
   }
 
   private toSummary(

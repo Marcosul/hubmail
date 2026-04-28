@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Pencil, Settings, Trash2, X } from "lucide-react";
+import { Loader2, Pencil, Settings, Trash2, X, Copy, Check } from "lucide-react";
 import {
   useDeleteWorkspace,
   useUpdateWorkspace,
@@ -15,10 +15,19 @@ type Props = {
   onClose: () => void;
 };
 
+type Resources = {
+  domains: number;
+  mailboxes: number;
+  webhooks: number;
+};
+
 export function WorkspaceSettingsDialog({ workspace, onClose }: Props) {
   const [name, setName] = useState(workspace.name);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [resources, setResources] = useState<Resources | null>(null);
+  const [loadingResources, setLoadingResources] = useState(false);
+  const [copiedName, setCopiedName] = useState(false);
   const update = useUpdateWorkspace(workspace.id);
   const remove = useDeleteWorkspace();
   const { data: workspaces } = useWorkspaces();
@@ -31,6 +40,38 @@ export function WorkspaceSettingsDialog({ workspace, onClose }: Props) {
     nameRef.current?.focus();
   }, []);
 
+  // Carregar contagem de recursos quando expandir confirmDelete
+  useEffect(() => {
+    if (confirmDelete && !resources && !loadingResources) {
+      loadResources();
+    }
+  }, [confirmDelete]);
+
+  async function loadResources() {
+    setLoadingResources(true);
+    try {
+      const response = await fetch(`/api/workspaces/${workspace.id}/resources/count`, {
+        headers: {
+          "Authorization": `Bearer ${await getAuthToken()}`,
+        },
+      });
+      if (response.ok) {
+        const data = (await response.json()) as Resources;
+        setResources(data);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar recursos:", error);
+    } finally {
+      setLoadingResources(false);
+    }
+  }
+
+  async function getAuthToken() {
+    // TODO: Implemente com seu SDK de autenticação (Supabase, etc)
+    const token = localStorage.getItem("auth_token");
+    return token || "";
+  }
+
   function handleRename(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim() || name === workspace.name) return;
@@ -38,6 +79,12 @@ export function WorkspaceSettingsDialog({ workspace, onClose }: Props) {
       { name: name.trim() },
       { onSuccess: () => onClose() },
     );
+  }
+
+  function handleCopyName() {
+    navigator.clipboard.writeText(workspace.name);
+    setCopiedName(true);
+    setTimeout(() => setCopiedName(false), 2000);
   }
 
   function handleDelete() {
@@ -49,6 +96,10 @@ export function WorkspaceSettingsDialog({ workspace, onClose }: Props) {
       },
     });
   }
+
+  const totalResources = resources
+    ? resources.domains + resources.mailboxes + resources.webhooks
+    : 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -141,12 +192,72 @@ export function WorkspaceSettingsDialog({ workspace, onClose }: Props) {
                 </div>
               ) : (
                 <div>
+                  {/* Mostrar recursos que serão deletados */}
+                  <div className="mb-4 rounded-lg border border-red-300/30 bg-red-50/50 p-3 dark:border-red-700/30 dark:bg-red-950/10">
+                    <p className="mb-2 text-xs font-semibold text-red-700 dark:text-red-300">
+                      Recursos que serão deletados:
+                    </p>
+
+                    {loadingResources ? (
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="size-3 animate-spin text-red-500" />
+                        <span className="text-xs text-red-600 dark:text-red-400">
+                          Carregando recursos...
+                        </span>
+                      </div>
+                    ) : resources ? (
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-semibold text-red-700 dark:text-red-300">
+                            {resources.domains}
+                          </span>
+                          <span className="text-xs text-red-600 dark:text-red-400">
+                            {resources.domains === 1 ? "Domínio" : "Domínios"}
+                          </span>
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-sm font-semibold text-red-700 dark:text-red-300">
+                            {resources.mailboxes}
+                          </span>
+                          <span className="text-xs text-red-600 dark:text-red-400">
+                            {resources.mailboxes === 1 ? "Inbox" : "Inboxes"}
+                          </span>
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-sm font-semibold text-red-700 dark:text-red-300">
+                            {resources.webhooks}
+                          </span>
+                          <span className="text-xs text-red-600 dark:text-red-400">
+                            {resources.webhooks === 1 ? "Webhook" : "Webhooks"}
+                          </span>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {totalResources > 0 && (
+                      <p className="mt-2 text-xs text-red-600 dark:text-red-400">
+                        Total: <span className="font-semibold">{totalResources}</span> {totalResources === 1 ? "recurso" : "recursos"}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Nome do workspace com copiar */}
                   <p className="mb-2 text-sm text-neutral-800 dark:text-neutral-200">
                     Escreva{" "}
-                    <span className="rounded bg-neutral-200 px-1.5 py-0.5 font-mono text-xs font-semibold text-neutral-900 dark:bg-neutral-700 dark:text-neutral-100">
+                    <button
+                      type="button"
+                      onClick={handleCopyName}
+                      className="group inline-flex items-center gap-1 rounded bg-neutral-200 px-1.5 py-0.5 font-mono text-xs font-semibold text-neutral-900 transition-colors hover:bg-neutral-300 dark:bg-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-600"
+                      title="Clique para copiar"
+                    >
                       {workspace.name}
-                    </span>{" "}
-                    para confirmar:
+                      {copiedName ? (
+                        <Check className="size-3 text-green-600 dark:text-green-400" />
+                      ) : (
+                        <Copy className="size-3 text-neutral-500 group-hover:text-neutral-700 dark:text-neutral-400 dark:group-hover:text-neutral-200" />
+                      )}
+                    </button>
+                    {" "}para confirmar:
                   </p>
                   <input
                     value={deleteConfirmText}
@@ -161,16 +272,22 @@ export function WorkspaceSettingsDialog({ workspace, onClose }: Props) {
                       className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {remove.isPending ? (
-                        <Loader2 className="size-4 animate-spin" />
+                        <>
+                          <Loader2 className="size-4 animate-spin" />
+                          Deletando...
+                        </>
                       ) : (
-                        <Trash2 className="size-4" />
+                        <>
+                          <Trash2 className="size-4" />
+                          Apagar definitivamente
+                        </>
                       )}
-                      Apagar definitivamente
                     </button>
                     <button
                       onClick={() => {
                         setConfirmDelete(false);
                         setDeleteConfirmText("");
+                        setResources(null);
                       }}
                       className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-200/60 dark:text-neutral-300 dark:hover:bg-neutral-800"
                     >
@@ -191,3 +308,4 @@ export function WorkspaceSettingsDialog({ workspace, onClose }: Props) {
     </div>
   );
 }
+

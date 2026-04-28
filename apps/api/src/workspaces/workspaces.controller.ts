@@ -60,9 +60,15 @@ export class WorkspacesController {
     return this.service.update(user, id, dto);
   }
 
+  @Get(':id/resources/count')
+  @ApiOperation({ summary: 'Conta recursos vinculados ao workspace (domínios, inboxes, webhooks)' })
+  countResources(@CurrentUser() user: User, @Param('id') id: string) {
+    return this.service.countResources(user, id);
+  }
+
   @Delete(':id')
   @HttpCode(204)
-  @ApiOperation({ summary: 'Apaga workspace em soft-delete (apenas OWNER)' })
+  @ApiOperation({ summary: 'Apaga workspace permanentemente (apenas OWNER)' })
   remove(@CurrentUser() user: User, @Param('id') id: string) {
     return this.service.remove(user, id);
   }

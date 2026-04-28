@@ -75,12 +75,14 @@ export class StalwartWebhooksAdapter {
           'wh1',
         ],
       ]);
+      this.log.debug(`Resposta JMAP: ${JSON.stringify(res)}`);
       const payload = res.find((r) => r[0] === 'x:WebHook/set')?.[1] as
         | {
             created?: Record<string, { id?: string } | string>;
             notCreated?: Record<string, { type?: string; description?: string }>;
           }
         | undefined;
+      this.log.debug(`Payload JMAP: ${JSON.stringify(payload)}`);
       const entry = payload?.created?.[createKey];
       const id = typeof entry === 'string' ? entry : entry?.id;
       if (id) {
@@ -88,7 +90,11 @@ export class StalwartWebhooksAdapter {
         return id;
       }
       const err = this.firstError(payload?.notCreated);
-      this.log.warn(`Stalwart x:WebHook/set não criou webhook${err ? `: ${err}` : ''}`);
+      this.log.warn(
+        `Stalwart x:WebHook/set não criou webhook${err ? `: ${err}` : ''}. Resposta: ${JSON.stringify(
+          payload,
+        )}`,
+      );
       return null;
     } catch (e) {
       this.log.error(
