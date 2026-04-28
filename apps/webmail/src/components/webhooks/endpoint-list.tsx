@@ -1,7 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Power, PowerOff, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+  ActionMenu,
+  DataList,
+  DataListEmpty,
+  DataListLoading,
+  DataListPagination,
+  DataListToolbar,
+  type ActionMenuItem,
+} from "@/components/data-list";
 import { useI18n } from "@/i18n/client";
 import {
   useDeleteWebhook,
@@ -15,6 +25,18 @@ export function EndpointList() {
   const { data, isLoading } = useWebhookEndpoints();
   const update = useUpdateWebhook();
   const remove = useDeleteWebhook();
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filtered = useMemo(() => {
+    if (!data) return [];
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return data;
+    return data.filter(
+      (w) =>
+        w.url.toLowerCase().includes(q) ||
+        (w.description ?? "").toLowerCase().includes(q),
+    );
+  }, [data, searchQuery]);
 
   return (
     <section className="space-y-4">
@@ -22,70 +44,107 @@ export function EndpointList() {
         <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
           {copy.list}
         </h2>
-        <Link
-          href="/webhooks/endpoints/new"
-          className="flex items-center gap-1.5 rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white dark:bg-white dark:text-neutral-900"
-        >
-          <Plus className="size-4" />
-          {copy.newEndpoint}
-        </Link>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-neutral-200 dark:border-hub-border">
-        {isLoading ? (
-          <p className="px-4 py-12 text-center text-sm text-neutral-500">
-            {messages.common.loading}
-          </p>
-        ) : data && data.length > 0 ? (
-          <ul className="divide-y divide-neutral-200 dark:divide-hub-border">
-            {data.map((w) => (
-              <li
-                key={w.id}
-                className="flex flex-col gap-3 px-4 py-3 text-sm md:flex-row md:items-center"
+      <DataList
+        toolbar={
+          <DataListToolbar
+            searchValue={searchQuery}
+            onSearchChange={setSearchQuery}
+            searchPlaceholder="URL ou descrição"
+            actions={
+              <Link
+                href="/webhooks/endpoints/new"
+                className="flex items-center gap-1.5 rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white dark:bg-white dark:text-neutral-900"
               >
-                <div className="min-w-0 flex-1">
-                  <Link
-                    href={`/webhooks/endpoints/${w.id}`}
-                    className="font-medium text-neutral-900 hover:underline dark:text-neutral-100"
-                  >
-                    {w.url}
-                  </Link>
-                  {w.description ? (
-                    <p className="truncate text-xs text-neutral-500">{w.description}</p>
-                  ) : null}
-                  <p className="mt-0.5 text-xs text-neutral-400">
-                    {w.events.length === 0
-                      ? copy.receivingAll
-                      : `${w.events.length} eventos`}
-                  </p>
-                </div>
-                <label className="flex items-center gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    checked={w.enabled}
-                    onChange={(e) =>
-                      update.mutate({ id: w.id, patch: { enabled: e.target.checked } })
-                    }
-                  />
-                  {w.enabled ? messages.common.active : messages.common.paused}
-                </label>
-                <button
-                  type="button"
-                  onClick={() => {
+                <Plus className="size-4" />
+                {copy.newEndpoint}
+              </Link>
+            }
+          />
+        }
+        footer={
+          <DataListPagination
+            summary={
+              <span className="text-xs">
+                {filtered.length} endpoint{filtered.length !== 1 ? "s" : ""}
+              </span>
+            }
+          />
+        }
+      >
+        {isLoading ? (
+          <DataListLoading label={messages.common.loading} />
+        ) : filtered.length > 0 ? (
+          <ul className="divide-y divide-neutral-200 dark:divide-hub-border">
+            {filtered.map((w) => {
+              const menuItems: ActionMenuItem[] = [
+                {
+                  key: "edit",
+                  label: "Editar",
+                  icon: Pencil,
+                  onClick: () => {
+                    window.location.href = `/webhooks/endpoints/${w.id}`;
+                  },
+                },
+                {
+                  key: "toggle",
+                  label: w.enabled ? messages.common.paused : messages.common.active,
+                  icon: w.enabled ? PowerOff : Power,
+                  onClick: () =>
+                    update.mutate({ id: w.id, patch: { enabled: !w.enabled } }),
+                },
+                {
+                  key: "delete",
+                  label: copy.delete,
+                  icon: Trash2,
+                  danger: true,
+                  separatorAbove: true,
+                  onClick: () => {
                     if (confirm(copy.confirmDelete)) remove.mutate(w.id);
-                  }}
-                  className="rounded p-1 text-neutral-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"
-                  aria-label={copy.delete}
+                  },
+                },
+              ];
+              return (
+                <li
+                  key={w.id}
+                  className="flex flex-col gap-3 px-4 py-3 text-sm md:flex-row md:items-center"
                 >
-                  <Trash2 className="size-4" />
-                </button>
-              </li>
-            ))}
+                  <div className="min-w-0 flex-1">
+                    <Link
+                      href={`/webhooks/endpoints/${w.id}`}
+                      className="font-medium text-neutral-900 hover:underline dark:text-neutral-100"
+                    >
+                      {w.url}
+                    </Link>
+                    {w.description ? (
+                      <p className="truncate text-xs text-neutral-500">{w.description}</p>
+                    ) : null}
+                    <p className="mt-0.5 text-xs text-neutral-400">
+                      {w.events.length === 0
+                        ? copy.receivingAll
+                        : `${w.events.length} eventos`}
+                    </p>
+                  </div>
+                  <span
+                    className={
+                      "inline-flex shrink-0 items-center rounded border px-2 py-0.5 text-[11px] font-medium " +
+                      (w.enabled
+                        ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-300"
+                        : "border-neutral-300 bg-neutral-50 text-neutral-600 dark:border-hub-border dark:bg-[#1a1a1a] dark:text-neutral-400")
+                    }
+                  >
+                    {w.enabled ? messages.common.active : messages.common.paused}
+                  </span>
+                  <ActionMenu items={menuItems} ariaLabel="Ações do endpoint" />
+                </li>
+              );
+            })}
           </ul>
         ) : (
-          <p className="px-4 py-12 text-center text-sm text-neutral-500">{copy.empty}</p>
+          <DataListEmpty description={searchQuery ? `Nenhum resultado para "${searchQuery}"` : copy.empty} />
         )}
-      </div>
+      </DataList>
     </section>
   );
 }

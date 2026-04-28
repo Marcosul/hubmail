@@ -4,6 +4,15 @@ import { Loader2, Trash2, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import {
+  ActionMenu,
+  DataList,
+  DataListEmpty,
+  DataListLoading,
+  DataListPagination,
+  DataListToolbar,
+  type ActionMenuItem,
+} from "@/components/data-list";
+import {
   useCreateMailGroup,
   useDeleteMailGroup,
   useMailGroups,
@@ -28,8 +37,21 @@ export default function MailGroupsPage() {
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pendingToggle, setPendingToggle] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const mailboxOptions = useMemo(() => mailboxes ?? [], [mailboxes]);
+
+  const filteredGroups = useMemo(() => {
+    if (!groups) return [];
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return groups;
+    return groups.filter(
+      (g) =>
+        g.address.toLowerCase().includes(q) ||
+        g.name.toLowerCase().includes(q) ||
+        (g.description ?? "").toLowerCase().includes(q),
+    );
+  }, [groups, searchQuery]);
 
   useEffect(() => {
     if (!showCreate) return;
@@ -100,15 +122,44 @@ export default function MailGroupsPage() {
         </button>
       }
     >
-      <div className="overflow-hidden rounded-lg border border-neutral-200 dark:border-hub-border">
+      <DataList
+        toolbar={
+          <DataListToolbar
+            searchValue={searchQuery}
+            onSearchChange={setSearchQuery}
+            searchPlaceholder={`${copy.groupAddress} ou ${copy.groupName}`}
+          />
+        }
+        footer={
+          <DataListPagination
+            summary={
+              <span className="text-xs">
+                {filteredGroups.length} grupo{filteredGroups.length !== 1 ? "s" : ""}
+              </span>
+            }
+          />
+        }
+      >
         {isLoading ? (
-          <p className="p-8 text-center text-sm text-neutral-500">{copy.loading}</p>
-        ) : !groups || groups.length === 0 ? (
-          <p className="p-8 text-center text-sm text-neutral-500">{copy.groupsEmpty}</p>
+          <DataListLoading label={copy.loading} />
+        ) : filteredGroups.length === 0 ? (
+          <DataListEmpty
+            icon={Users}
+            description={searchQuery ? `Nenhum grupo encontrado para "${searchQuery}"` : copy.groupsEmpty}
+          />
         ) : (
           <ul className="divide-y divide-neutral-200 dark:divide-hub-border">
-            {groups.map((g) => {
+            {filteredGroups.map((g) => {
               const memberIdsOfGroup = g.members.map((m) => m.id);
+              const menuItems: ActionMenuItem[] = [
+                {
+                  key: "delete",
+                  label: copy.delete,
+                  icon: Trash2,
+                  danger: true,
+                  onClick: () => handleDelete(g.id, g.address),
+                },
+              ];
               return (
                 <li key={g.id} className="p-4">
                   <div className="flex items-start justify-between gap-3">
@@ -124,14 +175,7 @@ export default function MailGroupsPage() {
                         <p className="line-clamp-2 text-xs text-neutral-500">{g.description}</p>
                       ) : null}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(g.id, g.address)}
-                      className="shrink-0 rounded p-1 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
-                      aria-label={copy.delete}
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
+                    <ActionMenu items={menuItems} ariaLabel={copy.delete} />
                   </div>
                   <div className="mt-3">
                     <p className="mb-1 text-xs font-medium text-neutral-600 dark:text-neutral-400">
@@ -171,7 +215,7 @@ export default function MailGroupsPage() {
             })}
           </ul>
         )}
-      </div>
+      </DataList>
 
       {showCreate ? (
         <div
