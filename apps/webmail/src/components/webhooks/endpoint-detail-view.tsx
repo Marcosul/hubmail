@@ -17,6 +17,7 @@ import { EndpointAdvancedTab } from "./endpoint-advanced-tab";
 import { SubscribedEventsCard } from "./subscribed-events-card";
 import { SigningSecretCard } from "./signing-secret-card";
 import { MessageAttemptsSection } from "./message-attempts-section";
+import { DeleteWebhookDialog } from "./delete-webhook-dialog";
 
 type SubTab = "overview" | "testing" | "advanced";
 
@@ -41,6 +42,7 @@ export function EndpointDetailView({ id }: { id: string }) {
   const [urlDraft, setUrlDraft] = useState("");
   const [editingUrl, setEditingUrl] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   if (isLoading || !webhook) {
     return <p className="text-sm text-neutral-500">{messages.common.loading}</p>;
@@ -63,10 +65,13 @@ export function EndpointDetailView({ id }: { id: string }) {
     setEditingUrl(false);
   };
 
-  const handleDelete = async () => {
-    if (!confirm("Eliminar este endpoint?")) return;
-    await remove.mutateAsync(webhook.id);
-    router.push("/webhooks/endpoints");
+  const handleDeleteConfirm = async () => {
+    try {
+      await remove.mutateAsync(webhook.id);
+      router.push("/webhooks/endpoints");
+    } catch {
+      // Erro é capturado pelo dialog
+    }
   };
 
   return (
@@ -132,7 +137,7 @@ export function EndpointDetailView({ id }: { id: string }) {
                 type="button"
                 onClick={() => {
                   setMenuOpen(false);
-                  void handleDelete();
+                  setShowDeleteDialog(true);
                 }}
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10"
               >
@@ -194,6 +199,16 @@ export function EndpointDetailView({ id }: { id: string }) {
           <SigningSecretCard webhookId={webhook.id} />
         </aside>
       </div>
+
+      {showDeleteDialog && (
+        <DeleteWebhookDialog
+          webhookUrl={webhook.url}
+          isDeleting={remove.isPending}
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setShowDeleteDialog(false)}
+          error={remove.isError ? remove.error : null}
+        />
+      )}
     </div>
   );
 }
