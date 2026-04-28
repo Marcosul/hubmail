@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import { useI18n } from "@/i18n/client";
 import { useMailboxDetails, useUpdateMailbox } from "@/hooks/use-mail";
-import type { UpdateMailboxInput } from "@hubmail/types";
+import type { MailboxDetails, UpdateMailboxInput } from "@hubmail/types";
 
 type Tab = "general" | "aliases" | "quotas" | "advanced";
 
@@ -35,8 +35,11 @@ export function EditInboxDialog({ mailboxId, address, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
 
+  const initialRef = useRef<MailboxDetails | null>(null);
+
   useEffect(() => {
     if (!data) return;
+    initialRef.current = data;
     setDisplayName(data.displayName ?? "");
     setFullName(data.fullName ?? "");
     setAliases(data.aliases ?? []);
@@ -48,6 +51,19 @@ export function EditInboxDialog({ mailboxId, address, onClose }: Props) {
     setPermissions((data.permissions ?? []).join(", "));
     setActive(data.active ?? true);
   }, [data]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
 
   const aliasInvalid = useMemo(() => {
     const v = aliasInput.trim().toLowerCase();
@@ -68,22 +84,55 @@ export function EditInboxDialog({ mailboxId, address, onClose }: Props) {
     setAliases((prev) => prev.filter((a) => a !== value));
   }
 
+  function buildDiff(): UpdateMailboxInput | null {
+    const init = initialRef.current;
+    if (!init) return null;
+    const diff: UpdateMailboxInput = {};
+
+    const dn = displayName.trim();
+    if (dn !== (init.displayName ?? "")) diff.displayName = dn;
+
+    const fn = fullName.trim();
+    if (fn !== (init.fullName ?? "")) diff.fullName = fn;
+
+    const initAliases = (init.aliases ?? []).slice().sort().join("|");
+    const cur = aliases.slice().sort().join("|");
+    if (initAliases !== cur) diff.aliases = aliases;
+
+    const lc = locale.trim();
+    if (lc !== (init.locale ?? "")) diff.locale = lc;
+
+    const tz = timeZone.trim();
+    if (tz !== (init.timeZone ?? "")) diff.timeZone = tz;
+
+    const qb = quotaBytes ? Number(quotaBytes) : 0;
+    const initQb = init.quotaBytes ?? 0;
+    if (qb !== initQb) diff.quotaBytes = qb;
+
+    if (encryptionAtRest !== Boolean(init.encryptionAtRest)) {
+      diff.encryptionAtRest = encryptionAtRest;
+    }
+
+    const rolesArr = roles.split(",").map((s) => s.trim()).filter(Boolean);
+    if (rolesArr.join("|") !== (init.roles ?? []).join("|")) diff.roles = rolesArr;
+
+    const permsArr = permissions.split(",").map((s) => s.trim()).filter(Boolean);
+    if (permsArr.join("|") !== (init.permissions ?? []).join("|")) diff.permissions = permsArr;
+
+    if (active !== Boolean(init.active)) diff.active = active;
+
+    return Object.keys(diff).length > 0 ? diff : null;
+  }
+
   async function submit() {
     setError(null);
-    const payload: UpdateMailboxInput = {
-      displayName,
-      fullName,
-      aliases,
-      locale,
-      timeZone,
-      quotaBytes: quotaBytes ? Number(quotaBytes) : 0,
-      encryptionAtRest,
-      roles: roles.split(",").map((s) => s.trim()).filter(Boolean),
-      permissions: permissions.split(",").map((s) => s.trim()).filter(Boolean),
-      active,
-    };
+    const diff = buildDiff();
+    if (!diff) {
+      onClose();
+      return;
+    }
     try {
-      await update.mutateAsync({ mailboxId, ...payload });
+      await update.mutateAsync({ mailboxId, ...diff });
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 2400);
     } catch (e) {
@@ -99,31 +148,51 @@ export function EditInboxDialog({ mailboxId, address, onClose }: Props) {
   ];
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 p-4">
-      <div className="w-full max-w-2xl rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-hub-border dark:bg-[#111]">
-        <div className="flex items-start justify-between gap-4 border-b border-neutral-200 px-5 py-4 dark:border-hub-border">
-          <div>
-            <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{copy.editInbox}</h3>
-            <p className="mt-0.5 text-sm text-neutral-500 dark:text-neutral-400">{address}</p>
-            <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">{copy.editInboxSubtitle}</p>
+    <div
+      className="fixed inset-0 z-40 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="edit-inbox-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="flex max-h-[100dvh] w-full max-w-2xl flex-col rounded-t-xl border border-neutral-200 bg-white shadow-xl dark:border-hub-border dark:bg-[#111] sm:max-h-[90dvh] sm:rounded-xl">
+        <div className="flex items-start justify-between gap-4 border-b border-neutral-200 px-4 py-3 dark:border-hub-border sm:px-5 sm:py-4">
+          <div className="min-w-0">
+            <h3
+              id="edit-inbox-title"
+              className="truncate text-base font-semibold text-neutral-900 dark:text-neutral-100"
+            >
+              {copy.editInbox}
+            </h3>
+            <p className="mt-0.5 truncate text-sm text-neutral-500 dark:text-neutral-400">{address}</p>
+            <p className="mt-0.5 hidden text-xs text-neutral-400 sm:block dark:text-neutral-500">
+              {copy.editInboxSubtitle}
+            </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-white/10"
+            className="shrink-0 rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-white/10"
             aria-label={messages.common.cancel}
           >
             <X className="size-4" />
           </button>
         </div>
 
-        <div className="flex gap-1 border-b border-neutral-200 px-5 dark:border-hub-border">
+        <div
+          className="flex gap-1 overflow-x-auto border-b border-neutral-200 px-2 sm:px-5 dark:border-hub-border"
+          role="tablist"
+        >
           {tabs.map((t) => (
             <button
               key={t.id}
               type="button"
+              role="tab"
+              aria-selected={tab === t.id}
               onClick={() => setTab(t.id)}
-              className={`px-3 py-2 text-sm font-medium transition-colors ${
+              className={`shrink-0 px-3 py-2 text-sm font-medium transition-colors ${
                 tab === t.id
                   ? "border-b-2 border-neutral-900 text-neutral-900 dark:border-white dark:text-white"
                   : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
@@ -134,7 +203,7 @@ export function EditInboxDialog({ mailboxId, address, onClose }: Props) {
           ))}
         </div>
 
-        <div className="max-h-[60vh] overflow-y-auto px-5 py-4">
+        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">
           {isLoading ? (
             <div className="flex items-center justify-center py-10 text-neutral-500">
               <Loader2 className="size-5 animate-spin" />
@@ -166,7 +235,7 @@ export function EditInboxDialog({ mailboxId, address, onClose }: Props) {
           ) : tab === "aliases" ? (
             <div className="space-y-3">
               <p className="text-xs text-neutral-500 dark:text-neutral-400">{copy.aliasesHelp}</p>
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <input
                   value={aliasInput}
                   onChange={(e) => setAliasInput(e.target.value)}
@@ -176,6 +245,7 @@ export function EditInboxDialog({ mailboxId, address, onClose }: Props) {
                       addAlias();
                     }
                   }}
+                  aria-invalid={aliasInvalid}
                   placeholder={copy.aliasesPlaceholder}
                   className={inputCls}
                 />
@@ -183,7 +253,7 @@ export function EditInboxDialog({ mailboxId, address, onClose }: Props) {
                   type="button"
                   disabled={!aliasInput.trim() || aliasInvalid}
                   onClick={addAlias}
-                  className="rounded-md border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-hub-border dark:text-neutral-200 dark:hover:bg-white/5"
+                  className="shrink-0 rounded-md border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-hub-border dark:text-neutral-200 dark:hover:bg-white/5"
                 >
                   {copy.aliasAdd}
                 </button>
@@ -197,13 +267,13 @@ export function EditInboxDialog({ mailboxId, address, onClose }: Props) {
                   aliases.map((a) => (
                     <li
                       key={a}
-                      className="flex items-center justify-between rounded-md border border-neutral-200 px-3 py-1.5 text-sm dark:border-hub-border"
+                      className="flex items-center justify-between gap-2 rounded-md border border-neutral-200 px-3 py-1.5 text-sm dark:border-hub-border"
                     >
-                      <span className="font-mono text-neutral-800 dark:text-neutral-200">{a}</span>
+                      <span className="truncate font-mono text-neutral-800 dark:text-neutral-200">{a}</span>
                       <button
                         type="button"
                         onClick={() => removeAlias(a)}
-                        className="text-xs text-red-600 hover:underline dark:text-red-400"
+                        className="shrink-0 text-xs text-red-600 hover:underline dark:text-red-400"
                       >
                         {copy.aliasRemove}
                       </button>
@@ -217,6 +287,7 @@ export function EditInboxDialog({ mailboxId, address, onClose }: Props) {
               <Field label={copy.quotaLabel} hint={copy.quotaHelp}>
                 <input
                   type="number"
+                  inputMode="numeric"
                   min={0}
                   value={quotaBytes}
                   onChange={(e) => setQuotaBytes(e.target.value)}
@@ -270,15 +341,15 @@ export function EditInboxDialog({ mailboxId, address, onClose }: Props) {
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-2 border-t border-neutral-200 px-5 py-3 dark:border-hub-border">
-          <div className="text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-200 px-4 py-3 sm:px-5 dark:border-hub-border">
+          <div className="order-2 w-full text-xs sm:order-1 sm:w-auto">
             {error ? (
               <span className="text-red-600 dark:text-red-400">{error}</span>
             ) : savedFlash ? (
               <span className="text-emerald-600 dark:text-emerald-400">{copy.savedOk}</span>
             ) : null}
           </div>
-          <div className="flex gap-2">
+          <div className="order-1 ml-auto flex shrink-0 gap-2 sm:order-2">
             <button
               type="button"
               onClick={onClose}

@@ -130,6 +130,7 @@ export function DomainSetupWizard({
   const [recordStatus, setRecordStatus] = useState<Record<string, "pending" | "verified">>({});
   const [checkingRecords, setCheckingRecords] = useState(false);
   const [verifyDone, setVerifyDone] = useState(false);
+  const [autoVerifyTriggered, setAutoVerifyTriggered] = useState(false);
 
   const create = useCreateDomain();
   const verify = useVerifyDomain();
@@ -207,6 +208,7 @@ export function DomainSetupWizard({
     setVerifyDone(false);
     setRecordStatus({});
     setCheckingRecords(false);
+    setAutoVerifyTriggered(false);
     if (mode === "configure" && existingDomainId) {
       setDomainId(existingDomainId);
       setDomainName(existingDomainName ?? "");
@@ -301,6 +303,15 @@ export function DomainSetupWizard({
       setCheckingRecords(false);
     }
   }
+
+  useEffect(() => {
+    if (!open || step !== 2 || autoVerifyTriggered) return;
+    if (!domainId || !setup?.domain?.name || !setup.records?.length) return;
+    if (verify.isPending || checkingRecords) return;
+    setAutoVerifyTriggered(true);
+    void runVerify();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, step, domainId, setup?.domain?.name, setup?.records?.length, autoVerifyTriggered]);
 
   if (!open) return null;
 

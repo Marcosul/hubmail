@@ -95,9 +95,24 @@ export class MailGroupsService {
     return list.find((d) => (d.name ?? '').toLowerCase() === domainName.toLowerCase())?.id ?? null;
   }
 
+  private async stalwartFindAccountByEmail(
+    creds: JmapCredentials,
+    emailAddress: string,
+  ): Promise<string | null> {
+    const responses = await this.jmap.invokeStalwartManagement(creds, [
+      ['x:Account/get', { ids: null }, 'qa'],
+    ]);
+    const list = (responses.find((r) => r[2] === 'qa')?.[1] as {
+      list?: Array<{ id?: string; emailAddress?: string }>;
+    })?.list ?? [];
+    const target = emailAddress.toLowerCase();
+    return list.find((a) => (a.emailAddress ?? '').toLowerCase() === target)?.id ?? null;
+  }
+
   private async resolveMemberAccountIds(
     workspaceId: string,
     memberIds: string[],
+    creds: JmapCredentials,
   ): Promise<{ mailboxIds: string[]; accountIds: string[] }> {
     if (memberIds.length === 0) return { mailboxIds: [], accountIds: [] };
     const mailboxes = await this.prisma.mailbox.findMany({
@@ -107,15 +122,37 @@ export class MailGroupsService {
     if (mailboxes.length !== memberIds.length) {
       throw new BadRequestException('Algum dos membros não pertence a este workspace.');
     }
-    const missing = mailboxes.filter((m) => !m.stalwartAccountId).map((m) => m.address);
-    if (missing.length > 0) {
+
+    const accountIds: string[] = [];
+    const missingAddresses: string[] = [];
+    for (const mb of mailboxes) {
+      if (mb.stalwartAccountId) {
+        accountIds.push(mb.stalwartAccountId);
+        continue;
+      }
+      const found = await this.stalwartFindAccountByEmail(creds, mb.address);
+      if (!found) {
+        missingAddresses.push(mb.address);
+        continue;
+      }
+      await this.prisma.mailbox.update({
+        where: { id: mb.id },
+        data: { stalwartAccountId: found },
+      });
+      this.log.log(
+        `${c.cyan}🔗${c.reset} backfill stalwartAccountId para ${c.magenta}${mb.address}${c.reset}`,
+      );
+      accountIds.push(found);
+    }
+
+    if (missingAddresses.length > 0) {
       throw new BadRequestException(
-        `Mailbox(es) sem stalwartAccountId: ${missing.join(', ')}. Reabra a inbox para ressincronizar.`,
+        `Mailbox(es) sem conta no Stalwart: ${missingAddresses.join(', ')}.`,
       );
     }
     return {
       mailboxIds: mailboxes.map((m) => m.id),
-      accountIds: mailboxes.map((m) => m.stalwartAccountId!),
+      accountIds,
     };
   }
 
@@ -193,7 +230,11 @@ export class MailGroupsService {
     }
 
     const memberIds = dto.memberIds ?? [];
-    const { mailboxIds, accountIds } = await this.resolveMemberAccountIds(workspaceId, memberIds);
+    const { mailboxIds, accountIds } = await this.resolveMemberAccountIds(
+      workspaceId,
+      memberIds,
+      creds,
+    );
 
     const createKey = 'hubmailGroup';
     const setRes = await this.jmap.invokeStalwartManagement(creds, [
@@ -281,7 +322,7 @@ export class MailGroupsService {
 
     let resolvedMembers: { mailboxIds: string[]; accountIds: string[] } | null = null;
     if (dto.memberIds !== undefined) {
-      resolvedMembers = await this.resolveMemberAccountIds(workspaceId, dto.memberIds);
+      resolvedMembers = await this.resolveMemberAccountIds(workspaceId, dto.memberIds, creds);
       stalwartUpdate.members = resolvedMembers.accountIds;
     }
 

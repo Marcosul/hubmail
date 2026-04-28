@@ -146,23 +146,41 @@ export class MailboxesService {
     let accountId = (await this.stalwartFindAccountByEmail(creds, emailAddress))?.id;
     if (!accountId) {
       const createKey = 'hubmailMailbox';
-      const setRes = await this.jmap.invokeStalwartManagement(creds, [
-        [
-          'x:Account/set',
-          {
-            create: {
-              [createKey]: {
-                '@type': 'User',
-                name: principalName,
-                domainId,
-                description: displayName?.trim() || undefined,
+      const createCall = (): Promise<unknown[][]> =>
+        this.jmap.invokeStalwartManagement(creds, [
+          [
+            'x:Account/set',
+            {
+              create: {
+                [createKey]: {
+                  '@type': 'User',
+                  name: principalName,
+                  domainId,
+                  description: displayName?.trim() || undefined,
+                },
               },
             },
-          },
-          's1',
-        ],
-      ]);
-      const payload = setRes.find((r) => r[0] === 'x:Account/set')?.[1];
+            's1',
+          ],
+        ]);
+      let setRes = await createCall();
+      let payload = setRes.find((r) => r[0] === 'x:Account/set')?.[1] as
+        | { notCreated?: Record<string, { type?: string }> }
+        | undefined;
+      const ncEntry = payload?.notCreated ? Object.values(payload.notCreated)[0] : undefined;
+      if (ncEntry?.type === 'invalidForeignKey') {
+        // O domínio root do servidor (system domain) tem certificateManagement: Automatic,
+        // o que faz o Stalwart rejeitar Account/set com invalidForeignKey. Reverter para Manual
+        // libera a criação de novas contas e não interfere com renovação ACME server-level.
+        this.log.warn(
+          `${c.yellow}⚠️${c.reset} Account/set rejeitado em ${c.magenta}${domainName}${c.reset} (domínio root). Forçando certificateManagement=Manual e retentando.`,
+        );
+        await this.jmap.invokeStalwartManagement(creds, [
+          ['x:Domain/set', { update: { [domainId]: { certificateManagement: { '@type': 'Manual' } } } }, 'u1'],
+        ]);
+        setRes = await createCall();
+        payload = setRes.find((r) => r[0] === 'x:Account/set')?.[1] as typeof payload;
+      }
       accountId = this.extractCreatedId(payload, createKey);
       const err = this.extractSetError(payload);
       if (!accountId || err) {
