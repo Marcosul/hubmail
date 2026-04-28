@@ -134,7 +134,7 @@ export class MailboxesService {
     emailAddress: string,
     principalName: string,
     displayName?: string,
-  ): Promise<string> {
+  ): Promise<{ secret: string; accountId: string }> {
     const [, domainName = ''] = emailAddress.split('@');
     const domainId = await this.stalwartFindDomainId(creds, domainName);
     if (!domainId) {
@@ -208,7 +208,7 @@ export class MailboxesService {
     this.log.log(
       `${c.green}🔐${c.reset} app password criada no Stalwart para ${c.magenta}${emailAddress}${c.reset}`,
     );
-    return generatedSecret;
+    return { secret: generatedSecret, accountId: accountId! };
   }
 
   async list(workspaceId: string) {
@@ -225,6 +225,33 @@ export class MailboxesService {
       createdAt: mb.createdAt,
       hasCredential: Boolean(mb.credentialId),
     }));
+  }
+
+  async getDetails(workspaceId: string, mailboxId: string) {
+    const mb = await this.prisma.mailbox.findFirst({
+      where: { id: mailboxId, workspaceId },
+      include: { domain: true, credential: true },
+    });
+    if (!mb) throw new NotFoundException('Mailbox não encontrada');
+    return {
+      id: mb.id,
+      address: mb.address,
+      displayName: mb.displayName,
+      fullName: mb.fullName,
+      domain: mb.domain.name,
+      aliases: mb.aliases,
+      locale: mb.locale,
+      timeZone: mb.timeZone,
+      quotaBytes: mb.quotaBytes ? Number(mb.quotaBytes) : null,
+      encryptionAtRest: mb.encryptionAtRest,
+      roles: mb.roles,
+      permissions: mb.permissions,
+      active: mb.active,
+      stalwartAccountId: mb.stalwartAccountId,
+      hasCredential: Boolean(mb.credentialId),
+      createdAt: mb.createdAt,
+      updatedAt: mb.updatedAt,
+    };
   }
 
   async getOrThrow(workspaceId: string, mailboxId: string) {
@@ -376,7 +403,7 @@ export class MailboxesService {
         'Defina STALWART_MANAGEMENT_EMAIL/PASSWORD para provisionar credenciais automaticamente.',
       );
     }
-    const password = await this.ensureStalwartMailboxSecret(
+    const { secret: password, accountId } = await this.ensureStalwartMailboxSecret(
       mgmt,
       address,
       principalName,
@@ -391,6 +418,7 @@ export class MailboxesService {
           domainId: domain.id,
           address,
           displayName: cleanDisplayName,
+          stalwartAccountId: accountId,
         },
       });
       const credential = await tx.mailCredential.create({
@@ -513,6 +541,138 @@ export class MailboxesService {
       `${c.yellow}🧯${c.reset} credencial invalidada para ${c.magenta}${mailbox.address}${c.reset} (motivo: ${reason})`,
     );
     return { ok: true };
+  }
+
+  async update(
+    workspaceId: string,
+    mailboxId: string,
+    actor: string,
+    dto: {
+      displayName?: string;
+      fullName?: string;
+      aliases?: string[];
+      locale?: string;
+      timeZone?: string;
+      quotaBytes?: number;
+      encryptionAtRest?: boolean;
+      roles?: string[];
+      permissions?: string[];
+      active?: boolean;
+    },
+  ) {
+    const mailbox = await this.getOrThrow(workspaceId, mailboxId);
+
+    // 1) Sync no Stalwart primeiro — se falhar, não persistimos no banco
+    const mgmt = this.managementCreds();
+    if (!mgmt) {
+      throw new BadRequestException(
+        'Defina STALWART_MANAGEMENT_EMAIL/PASSWORD para sincronizar com o Stalwart.',
+      );
+    }
+
+    let accountId = mailbox.stalwartAccountId ?? undefined;
+    if (!accountId) {
+      const found = await this.stalwartFindAccountByEmail(mgmt, mailbox.address);
+      if (!found?.id) {
+        throw new BadRequestException(
+          `Conta ${mailbox.address} não encontrada no Stalwart; não é possível atualizar.`,
+        );
+      }
+      accountId = found.id;
+    }
+
+    const stalwartUpdate: Record<string, unknown> = {};
+    if (dto.fullName !== undefined) {
+      stalwartUpdate.description = dto.fullName.trim() || null;
+    }
+    if (dto.aliases !== undefined) {
+      const normalized = Array.from(
+        new Set(
+          dto.aliases
+            .map((a) => a.trim().toLowerCase())
+            .filter((a) => a && a !== mailbox.address.toLowerCase()),
+        ),
+      );
+      stalwartUpdate.aliases = normalized;
+    }
+    if (dto.locale !== undefined) {
+      stalwartUpdate.locale = dto.locale.trim() || null;
+    }
+    if (dto.timeZone !== undefined) {
+      stalwartUpdate.timeZone = dto.timeZone.trim() || null;
+    }
+    if (dto.quotaBytes !== undefined) {
+      const q = Number(dto.quotaBytes);
+      stalwartUpdate.quotas = q > 0 ? { account: q } : {};
+    }
+    if (dto.encryptionAtRest !== undefined) {
+      stalwartUpdate.encryptionAtRest = {
+        '@type': dto.encryptionAtRest ? 'Enabled' : 'Disabled',
+      };
+    }
+    if (dto.roles !== undefined) {
+      stalwartUpdate.roles = dto.roles.map((r) => r.trim()).filter(Boolean);
+    }
+    if (dto.permissions !== undefined) {
+      stalwartUpdate.permissions = dto.permissions.map((p) => p.trim()).filter(Boolean);
+    }
+    if (dto.active !== undefined) {
+      stalwartUpdate.active = dto.active;
+    }
+
+    if (Object.keys(stalwartUpdate).length > 0) {
+      const setRes = await this.jmap.invokeStalwartManagement(mgmt, [
+        ['x:Account/set', { update: { [accountId]: stalwartUpdate } }, 'u1'],
+      ]);
+      const payload = setRes.find((r) => r[0] === 'x:Account/set')?.[1];
+      const err = this.extractSetError(payload);
+      if (err) {
+        throw new BadRequestException(
+          `Stalwart rejeitou update da conta: ${err} | payload=${this.compactPayload(payload)}`,
+        );
+      }
+      this.log.log(
+        `${c.green}✏️${c.reset} Stalwart account ${c.magenta}${mailbox.address}${c.reset} sincronizada (${Object.keys(stalwartUpdate).join(', ')})`,
+      );
+    }
+
+    // 2) Persistência local
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const data: Record<string, unknown> = {};
+      if (dto.displayName !== undefined) data.displayName = dto.displayName.trim() || null;
+      if (dto.fullName !== undefined) data.fullName = dto.fullName.trim() || null;
+      if (dto.aliases !== undefined) {
+        data.aliases = (stalwartUpdate.aliases as string[] | undefined) ?? dto.aliases;
+      }
+      if (dto.locale !== undefined) data.locale = dto.locale.trim() || null;
+      if (dto.timeZone !== undefined) data.timeZone = dto.timeZone.trim() || null;
+      if (dto.quotaBytes !== undefined) {
+        data.quotaBytes = dto.quotaBytes && dto.quotaBytes > 0 ? BigInt(dto.quotaBytes) : null;
+      }
+      if (dto.encryptionAtRest !== undefined) data.encryptionAtRest = dto.encryptionAtRest;
+      if (dto.roles !== undefined) data.roles = dto.roles;
+      if (dto.permissions !== undefined) data.permissions = dto.permissions;
+      if (dto.active !== undefined) data.active = dto.active;
+      if (!mailbox.stalwartAccountId && accountId) data.stalwartAccountId = accountId;
+
+      const row = await tx.mailbox.update({ where: { id: mailbox.id }, data });
+      await tx.auditLog.create({
+        data: {
+          workspaceId,
+          actor,
+          action: 'mailbox.updated',
+          subjectType: 'Mailbox',
+          subjectId: mailbox.id,
+          data: { fields: Object.keys(data) },
+        },
+      });
+      return row;
+    });
+
+    this.log.log(
+      `${c.cyan}💾${c.reset} mailbox ${c.magenta}${mailbox.address}${c.reset} atualizada por ${c.cyan}${actor}${c.reset}`,
+    );
+    return this.getDetails(workspaceId, updated.id);
   }
 
   async remove(workspaceId: string, mailboxId: string, actor: string) {

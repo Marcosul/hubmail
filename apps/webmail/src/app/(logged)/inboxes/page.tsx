@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { EllipsisVertical, KeyRound, Trash2 } from "lucide-react";
+import { EllipsisVertical, KeyRound, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { EditInboxDialog } from "@/components/inboxes/edit-inbox-dialog";
 import { InboxTableActionsCell } from "@/components/inboxes/inbox-table-actions-cell";
 import { InboxTableRow } from "@/components/inboxes/inbox-table-row";
 import { useDeleteMailbox, useMailboxes, useRotateMailboxCredential } from "@/hooks/use-mail";
@@ -25,6 +26,7 @@ export default function InboxesPage() {
   const removeMailbox = useDeleteMailbox();
   const [openMenu, setOpenMenu] = useState<{ id: string; top: number; left: number } | null>(null);
   const [editingMailbox, setEditingMailbox] = useState<{ id: string; address: string } | null>(null);
+  const [editingFull, setEditingFull] = useState<{ id: string; address: string } | null>(null);
   const [credentialUsername, setCredentialUsername] = useState("");
   const [credentialPassword, setCredentialPassword] = useState("");
   const [dialogError, setDialogError] = useState<string | null>(null);
@@ -106,6 +108,12 @@ export default function InboxesPage() {
       subtitle={copy.subtitle}
       actions={
         <>
+          <Link
+            href="/inboxes/groups"
+            className="text-xs font-semibold uppercase tracking-wide text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+          >
+            {copy.groupsTitle}
+          </Link>
           <Link
             href="/inboxes/unified"
             className="text-xs font-semibold uppercase tracking-wide text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
@@ -207,6 +215,17 @@ export default function InboxesPage() {
                         >
                           <button
                             type="button"
+                            onClick={() => {
+                              setEditingFull({ id: row.id, address: row.address });
+                              setOpenMenu(null);
+                            }}
+                            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-white/10"
+                          >
+                            <Pencil className="size-4" />
+                            {copy.editInbox}
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => openCredentialDialog({ id: row.id, address: row.address })}
                             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-white/10"
                           >
@@ -247,6 +266,13 @@ export default function InboxesPage() {
           </span>
         </div>
       </div>
+      {editingFull ? (
+        <EditInboxDialog
+          mailboxId={editingFull.id}
+          address={editingFull.address}
+          onClose={() => setEditingFull(null)}
+        />
+      ) : null}
       {editingMailbox ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 p-4">
           <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white p-5 shadow-xl dark:border-hub-border dark:bg-[#111]">

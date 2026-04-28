@@ -10,20 +10,31 @@ import { MailService } from './mail.service';
 import { MailStreamService } from './mail-stream.service';
 import { MailboxesController } from './mailboxes.controller';
 import { MailboxesService } from './mailboxes.service';
+import { MailGroupsController } from './mail-groups.controller';
+import { MailGroupsService } from './mail-groups.service';
 import { SmtpService } from './smtp.service';
 
 @Module({
   imports: [AuthModule, TenancyModule, WebhookDispatcherModule],
-  controllers: [MailboxesController, MailController],
+  controllers: [MailboxesController, MailGroupsController, MailController],
   providers: [
     CryptoService,
     HtmlSanitizerService,
     JmapClient,
     SmtpService,
     MailboxesService,
+    MailGroupsService,
     MailService,
     MailStreamService,
   ],
-  exports: [MailService, MailboxesService, CryptoService, SmtpService, JmapClient, MailStreamService],
+  exports: [
+    MailService,
+    MailboxesService,
+    MailGroupsService,
+    CryptoService,
+    SmtpService,
+    JmapClient,
+    MailStreamService,
+  ],
 })
 export class MailModule {}

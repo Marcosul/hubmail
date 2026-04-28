@@ -20,6 +20,67 @@ export interface MailboxSummary {
   hasCredential: boolean;
 }
 
+/** Detalhes completos de uma mailbox (Stalwart Account). */
+export interface MailboxDetails extends MailboxSummary {
+  fullName?: string | null;
+  aliases: string[];
+  locale?: string | null;
+  timeZone?: string | null;
+  quotaBytes?: number | null;
+  encryptionAtRest: boolean;
+  roles: string[];
+  permissions: string[];
+  active: boolean;
+  stalwartAccountId?: string | null;
+  updatedAt: string | Date;
+}
+
+export interface UpdateMailboxInput {
+  displayName?: string;
+  fullName?: string;
+  aliases?: string[];
+  locale?: string;
+  timeZone?: string;
+  quotaBytes?: number;
+  encryptionAtRest?: boolean;
+  roles?: string[];
+  permissions?: string[];
+  active?: boolean;
+}
+
+export interface MailGroupMember {
+  id: string;
+  address: string;
+}
+
+export interface MailGroupSummary {
+  id: string;
+  address: string;
+  name: string;
+  description?: string | null;
+  domain: string;
+  members: MailGroupMember[];
+  createdAt: string | Date;
+  updatedAt: string | Date;
+}
+
+export interface MailGroupDetails extends MailGroupSummary {
+  stalwartAccountId?: string | null;
+}
+
+export interface CreateMailGroupInput {
+  address: string;
+  name: string;
+  description?: string;
+  memberIds?: string[];
+}
+
+export interface UpdateMailGroupInput {
+  name?: string;
+  description?: string;
+  memberIds?: string[];
+}
+
 /** User-saved label names for inbox filtering (HubMail DB, not JMAP). */
 export interface MailboxSavedLabel {
   id: string;

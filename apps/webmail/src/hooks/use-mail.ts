@@ -9,9 +9,13 @@ import {
 } from "@tanstack/react-query";
 import { apiRequest } from "@/api/rest/generic";
 import type {
+  CreateMailGroupInput,
   EmailMessage,
+  MailboxDetails,
   MailboxSummary,
   MailFolderSummary,
+  MailGroupDetails,
+  MailGroupSummary,
   PatchMessageInput,
   SaveComposeDraftInput,
   SaveComposeDraftResult,
@@ -19,6 +23,8 @@ import type {
   SendMailResult,
   ThreadPage,
   ThreadSummary,
+  UpdateMailboxInput,
+  UpdateMailGroupInput,
 } from "@hubmail/types";
 
 type FolderListResult = MailFolderSummary[];
@@ -252,6 +258,84 @@ export function useRotateMailboxCredential() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["mailboxes"] });
+    },
+  });
+}
+
+export function useMailboxDetails(mailboxId: string | undefined) {
+  return useQuery<MailboxDetails>({
+    queryKey: ["mailbox-details", mailboxId],
+    queryFn: () =>
+      apiRequest<MailboxDetails>(`/api/mailboxes/${encodeURIComponent(mailboxId!)}`),
+    enabled: Boolean(mailboxId),
+  });
+}
+
+export function useUpdateMailbox() {
+  const qc = useQueryClient();
+  return useMutation<MailboxDetails, Error, { mailboxId: string } & UpdateMailboxInput>({
+    mutationFn: ({ mailboxId, ...body }) =>
+      apiRequest<MailboxDetails>(`/api/mailboxes/${encodeURIComponent(mailboxId)}`, {
+        method: "PATCH",
+        body,
+      }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["mailboxes"] });
+      qc.invalidateQueries({ queryKey: ["mailbox-details", vars.mailboxId] });
+    },
+  });
+}
+
+export function useMailGroups(): UseQueryResult<MailGroupSummary[]> {
+  return useQuery({
+    queryKey: ["mail-groups"],
+    queryFn: () => apiRequest<MailGroupSummary[]>("/api/mail-groups"),
+  });
+}
+
+export function useMailGroup(groupId: string | undefined) {
+  return useQuery<MailGroupDetails>({
+    queryKey: ["mail-group", groupId],
+    queryFn: () => apiRequest<MailGroupDetails>(`/api/mail-groups/${encodeURIComponent(groupId!)}`),
+    enabled: Boolean(groupId),
+  });
+}
+
+export function useCreateMailGroup() {
+  const qc = useQueryClient();
+  return useMutation<MailGroupDetails, Error, CreateMailGroupInput>({
+    mutationFn: (body) =>
+      apiRequest<MailGroupDetails>("/api/mail-groups", { method: "POST", body }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["mail-groups"] });
+    },
+  });
+}
+
+export function useUpdateMailGroup() {
+  const qc = useQueryClient();
+  return useMutation<MailGroupDetails, Error, { groupId: string } & UpdateMailGroupInput>({
+    mutationFn: ({ groupId, ...body }) =>
+      apiRequest<MailGroupDetails>(`/api/mail-groups/${encodeURIComponent(groupId)}`, {
+        method: "PATCH",
+        body,
+      }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["mail-groups"] });
+      qc.invalidateQueries({ queryKey: ["mail-group", vars.groupId] });
+    },
+  });
+}
+
+export function useDeleteMailGroup() {
+  const qc = useQueryClient();
+  return useMutation<{ ok?: boolean }, Error, { groupId: string }>({
+    mutationFn: ({ groupId }) =>
+      apiRequest<{ ok?: boolean }>(`/api/mail-groups/${encodeURIComponent(groupId)}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["mail-groups"] });
     },
   });
 }

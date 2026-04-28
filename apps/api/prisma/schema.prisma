@@ -134,6 +134,7 @@ model Workspace {
   invites      WorkspaceInvite[]
   domains      Domain[]
   mailboxes    Mailbox[]
+  mailGroups   MailGroup[]
   apiKeys      ApiKey[]
   auditLogs    AuditLog[]
   outgoing     OutgoingMessage[]
@@ -202,9 +203,10 @@ model Domain {
   createdAt            DateTime     @default(now()) @map("created_at")
   updatedAt            DateTime     @updatedAt @map("updated_at")
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  mailboxes Mailbox[]
-  events    InboxEvent[]
+  workspace  Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  mailboxes  Mailbox[]
+  events     InboxEvent[]
+  mailGroups MailGroup[]
 
   @@unique([workspaceId, name])
   @@index([status])
@@ -217,8 +219,17 @@ model Mailbox {
   domainId          String   @map("domain_id") @db.Uuid
   address           String
   displayName       String?  @map("display_name")
+  fullName          String?  @map("full_name")
   stalwartAccountId String?  @map("stalwart_account_id")
   credentialId      String?  @unique @map("credential_id") @db.Uuid
+  aliases           String[] @default([])
+  locale            String?
+  timeZone          String?  @map("time_zone")
+  quotaBytes        BigInt?  @map("quota_bytes")
+  encryptionAtRest  Boolean  @default(false) @map("encryption_at_rest")
+  roles             String[] @default([])
+  permissions       String[] @default([])
+  active            Boolean  @default(true)
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
@@ -229,10 +240,45 @@ model Mailbox {
   events      InboxEvent[]
   index       MessageIndex[]
   savedLabels MailboxSavedLabel[]
+  groupMemberships MailGroupMember[]
 
   @@unique([workspaceId, address])
   @@index([domainId])
   @@map("mailboxes")
+}
+
+model MailGroup {
+  id                String   @id @default(uuid()) @db.Uuid
+  workspaceId       String   @map("workspace_id") @db.Uuid
+  domainId          String   @map("domain_id") @db.Uuid
+  address           String
+  name              String
+  description       String?
+  stalwartAccountId String?  @map("stalwart_account_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  workspace Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  domain    Domain             @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  members   MailGroupMember[]
+
+  @@unique([workspaceId, address])
+  @@index([domainId])
+  @@map("mail_groups")
+}
+
+model MailGroupMember {
+  id        String   @id @default(uuid()) @db.Uuid
+  groupId   String   @map("group_id") @db.Uuid
+  mailboxId String   @map("mailbox_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  group   MailGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  mailbox Mailbox   @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, mailboxId])
+  @@index([mailboxId])
+  @@map("mail_group_members")
 }
 
 /// User-defined label names per mailbox for quick filtering in webmail (not JMAP flags).

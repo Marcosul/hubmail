@@ -39,17 +39,25 @@ function expandOriginsForCors(origins: string[]): string[] {
 }
 
 export function getCorsAllowList(): string[] {
+  const onVercel = Boolean(
+    process.env.VERCEL || process.env.VERCEL_URL || process.env.VERCEL_ENV,
+  );
+
   const appOrigins = parseOrigins(process.env.APP_URL);
   const extraOrigins = process.env.CORS_ORIGINS
     ? parseOrigins(process.env.CORS_ORIGINS)
     : [];
-  let baseOrigins = [...new Set([...appOrigins, ...extraOrigins])];
+
+  // Em Vercel, hubmail.to e www.hubmail.to são sempre incluídos como chão mínimo,
+  // independentemente do valor de APP_URL ou CORS_ORIGINS.
+  const floorOrigins: string[] = onVercel ? [...DEFAULT_CORS_HUBMAIL] : [];
+
+  let baseOrigins = [...new Set([...floorOrigins, ...appOrigins, ...extraOrigins])];
+
   if (baseOrigins.length === 0) {
-    const onVercel = Boolean(
-      process.env.VERCEL || process.env.VERCEL_URL || process.env.VERCEL_ENV,
-    );
-    baseOrigins = onVercel ? [...DEFAULT_CORS_HUBMAIL] : ['http://localhost:3010'];
+    baseOrigins = ['http://localhost:3010'];
   }
+
   return expandOriginsForCors(baseOrigins);
 }
 

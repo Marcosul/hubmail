@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -18,6 +19,7 @@ import {
   CreateMailboxApiDto,
   RotateCredentialDto,
 } from './dto/create-mailbox.dto';
+import { UpdateMailboxDto } from './dto/update-mailbox.dto';
 import { AddSavedLabelsDto } from './dto/add-saved-labels.dto';
 import { MailboxesService } from './mailboxes.service';
 
@@ -42,6 +44,23 @@ export class MailboxesController {
     @Body() dto: CreateMailboxApiDto,
   ) {
     return this.service.create(ws.workspaceId, user.id, dto);
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Detalhes completos da mailbox (campos do Stalwart Account)' })
+  details(@CurrentWorkspace() ws: WorkspaceContext, @Param('id') mailboxId: string) {
+    return this.service.getDetails(ws.workspaceId, mailboxId);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Atualiza mailbox e sincroniza com o Stalwart' })
+  update(
+    @CurrentWorkspace() ws: WorkspaceContext,
+    @CurrentUser() user: User,
+    @Param('id') mailboxId: string,
+    @Body() dto: UpdateMailboxDto,
+  ) {
+    return this.service.update(ws.workspaceId, mailboxId, user.id, dto);
   }
 
   @Get(':id/saved-labels')
