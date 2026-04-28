@@ -97,6 +97,25 @@ export function useVerifyDomain() {
   });
 }
 
+export function useMigrateDomain() {
+  const qc = useQueryClient();
+  return useMutation<
+    { ok: true; domainId: string; targetWorkspaceId: string },
+    Error,
+    { id: string; targetWorkspaceId: string }
+  >({
+    mutationFn: ({ id, targetWorkspaceId }) =>
+      apiRequest(`/api/domains/${id}/migrate`, {
+        method: "POST",
+        body: { targetWorkspaceId },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: KEY });
+      qc.invalidateQueries({ queryKey: PLAN_KEY });
+    },
+  });
+}
+
 export function useDeleteDomain() {
   const qc = useQueryClient();
   return useMutation<{ ok: boolean }, Error, string>({

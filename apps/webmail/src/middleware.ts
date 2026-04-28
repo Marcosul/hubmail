@@ -12,7 +12,7 @@ const PROTECTED_PREFIXES = [
   "/domains",
   "/inboxes",
   "/metrics",
-  "/pods",
+  "/workspaces",
   "/upgrade",
   "/webhooks",
 ];
@@ -118,7 +118,7 @@ export const config = {
     "/domains/:path*",
     "/inboxes/:path*",
     "/metrics/:path*",
-    "/pods/:path*",
+    "/workspaces/:path*",
     "/upgrade/:path*",
     "/webhooks/:path*",
     "/login",

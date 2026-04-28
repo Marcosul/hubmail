@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { AlertTriangle, CheckCircle2, Globe, Loader2, Plus, RefreshCw, Trash2, CheckCircle, Clock, XCircle, Search, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { AlertTriangle, ArrowRightLeft, CheckCircle2, Globe, Loader2, MoreVertical, Pencil, Plus, Settings, Trash2, CheckCircle, Clock, XCircle, Search, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { DomainSetupWizard } from "@/components/domains/domain-setup-wizard";
@@ -11,11 +11,12 @@ import {
   useDomains,
   useDomainPlanInfo,
   useCreateDomain,
-  useVerifyDomain,
+  useMigrateDomain,
   deleteDomainStream,
   type Domain,
   type DomainDeleteEvent,
 } from "@/hooks/use-domains";
+import { useWorkspaces, getActiveWorkspaceId } from "@/hooks/use-workspace";
 
 function StatusBadge({ status }: { status: Domain["status"] }) {
   if (status === "VERIFIED") {
@@ -51,7 +52,56 @@ export default function DomainsPage() {
   const { data: domains, isLoading } = useDomains();
   const { data: planInfo } = useDomainPlanInfo();
   const create = useCreateDomain();
-  const verify = useVerifyDomain();
+  const migrate = useMigrateDomain();
+  const { data: workspaces } = useWorkspaces();
+  const activeWorkspaceId = getActiveWorkspaceId();
+
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!openMenuId) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuId(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [openMenuId]);
+
+  const [migrateState, setMigrateState] = useState<{
+    id: string;
+    name: string;
+    targetWorkspaceId: string | null;
+    error: string | null;
+    success: boolean;
+  } | null>(null);
+
+  const eligibleTargets = (workspaces ?? []).filter(
+    (w) =>
+      w.id !== activeWorkspaceId && (w.role === "OWNER" || w.role === "ADMIN"),
+  );
+
+  const startMigrate = async () => {
+    if (!migrateState?.targetWorkspaceId) return;
+    try {
+      await migrate.mutateAsync({
+        id: migrateState.id,
+        targetWorkspaceId: migrateState.targetWorkspaceId,
+      });
+      setMigrateState((prev) => (prev ? { ...prev, success: true, error: null } : prev));
+    } catch (err) {
+      setMigrateState((prev) =>
+        prev
+          ? {
+              ...prev,
+              error: err instanceof Error ? err.message : "Falha ao migrar domínio",
+            }
+          : prev,
+      );
+    }
+  };
 
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -360,48 +410,100 @@ export default function DomainsPage() {
                     {domain.mailboxCount !== 1 ? "es" : ""}
                   </span>
                   <StatusBadge status={domain.status} />
-                  <div className="flex flex-wrap items-center justify-end gap-1">
+                  <div className="relative flex items-center justify-end">
                     <button
                       type="button"
                       onClick={() =>
-                        setWizard({
-                          open: true,
-                          mode: "configure",
-                          id: domain.id,
-                          name: domain.name,
-                        })
+                        setOpenMenuId((cur) => (cur === domain.id ? null : domain.id))
                       }
-                      className="rounded px-2 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-white/5"
+                      title="Ações"
+                      aria-haspopup="menu"
+                      aria-expanded={openMenuId === domain.id}
+                      className="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-white/5 dark:hover:text-neutral-300"
                     >
-                      {copy.wizard.configureCta}
+                      <MoreVertical className="size-4" />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => verify.mutate(domain.id)}
-                      disabled={verify.isPending}
-                      title="Verificar DNS"
-                      className="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-50 dark:hover:bg-white/5 dark:hover:text-neutral-300"
-                    >
-                      <RefreshCw className="size-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setDeleteState({
-                          id: domain.id,
-                          name: domain.name,
-                          mailboxCount: domain.mailboxCount,
-                          phase: "confirm",
-                          steps: [],
-                          error: null,
-                          summary: null,
-                        })
-                      }
-                      title="Excluir domínio"
-                      className="rounded p-1.5 text-neutral-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:hover:bg-red-500/10 dark:hover:text-red-400"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
+                    {openMenuId === domain.id ? (
+                      <div
+                        ref={menuRef}
+                        role="menu"
+                        className="absolute right-0 top-full z-20 mt-1 w-56 overflow-hidden rounded-md border border-neutral-200 bg-white py-1 shadow-lg dark:border-hub-border dark:bg-[#1a1a1a]"
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setOpenMenuId(null);
+                            setWizard({
+                              open: true,
+                              mode: "configure",
+                              id: domain.id,
+                              name: domain.name,
+                            });
+                          }}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-white/5"
+                        >
+                          <Pencil className="size-4" />
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setOpenMenuId(null);
+                            setWizard({
+                              open: true,
+                              mode: "configure",
+                              id: domain.id,
+                              name: domain.name,
+                            });
+                          }}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-white/5"
+                        >
+                          <Settings className="size-4" />
+                          Configurações
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setOpenMenuId(null);
+                            setMigrateState({
+                              id: domain.id,
+                              name: domain.name,
+                              targetWorkspaceId: null,
+                              error: null,
+                              success: false,
+                            });
+                          }}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-white/5"
+                        >
+                          <ArrowRightLeft className="size-4" />
+                          Migrar p/ workspace
+                        </button>
+                        <div className="my-1 border-t border-neutral-200 dark:border-hub-border" />
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setOpenMenuId(null);
+                            setDeleteState({
+                              id: domain.id,
+                              name: domain.name,
+                              mailboxCount: domain.mailboxCount,
+                              phase: "confirm",
+                              steps: [],
+                              error: null,
+                              summary: null,
+                            });
+                          }}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
+                        >
+                          <Trash2 className="size-4" />
+                          Eliminar
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                 </li>
               ))}
@@ -621,6 +723,145 @@ export default function DomainsPage() {
                 >
                   {deleteState.phase === "running" ? "Aguarde…" : "Fechar"}
                 </button>
+              )}
+            </footer>
+          </div>
+        </div>
+      ) : null}
+
+      {migrateState ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="migrate-domain-title"
+            className="flex max-h-[92vh] w-full max-w-md flex-col rounded-t-xl border border-neutral-200 bg-white shadow-xl dark:border-hub-border dark:bg-[#111] sm:rounded-xl"
+          >
+            <header className="flex items-start justify-between gap-3 border-b border-neutral-200 px-5 py-3 dark:border-hub-border">
+              <div className="flex items-start gap-3">
+                <div className="rounded-full bg-indigo-100 p-2 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400">
+                  <ArrowRightLeft className="size-5" />
+                </div>
+                <div>
+                  <h2
+                    id="migrate-domain-title"
+                    className="text-base font-semibold text-neutral-900 dark:text-white"
+                  >
+                    Migrar domínio
+                  </h2>
+                  <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                    {migrateState.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMigrateState(null)}
+                disabled={migrate.isPending}
+                className="rounded-md p-1 text-neutral-500 hover:bg-neutral-100 disabled:opacity-40 dark:hover:bg-white/10"
+                aria-label="Fechar"
+              >
+                <X className="size-5" />
+              </button>
+            </header>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 text-sm text-neutral-700 dark:text-neutral-300">
+              {migrateState.success ? (
+                <div className="flex items-start gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200">
+                  <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+                  <p>
+                    Domínio <span className="font-semibold">{migrateState.name}</span>{" "}
+                    migrado com sucesso. As mailboxes e mensagens associadas seguem com o domínio para o novo workspace.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <p className="mb-3">
+                    Selecione o workspace de destino. Apenas workspaces nos quais
+                    você é OWNER ou ADMIN aparecem aqui.
+                  </p>
+                  {eligibleTargets.length === 0 ? (
+                    <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+                      Não há outros workspaces onde você tenha permissão de admin.
+                    </p>
+                  ) : (
+                    <ul className="space-y-1.5">
+                      {eligibleTargets.map((w) => {
+                        const selected = migrateState.targetWorkspaceId === w.id;
+                        return (
+                          <li key={w.id}>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setMigrateState((prev) =>
+                                  prev ? { ...prev, targetWorkspaceId: w.id } : prev,
+                                )
+                              }
+                              className={
+                                "flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition " +
+                                (selected
+                                  ? "border-indigo-500 bg-indigo-50 text-indigo-900 dark:border-indigo-400 dark:bg-indigo-500/10 dark:text-indigo-100"
+                                  : "border-neutral-200 bg-white hover:bg-neutral-50 dark:border-hub-border dark:bg-[#141414] dark:hover:bg-white/5")
+                              }
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate font-medium">{w.name}</p>
+                                <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+                                  {w.organization?.name} · {w.role}
+                                </p>
+                              </div>
+                              {selected ? (
+                                <CheckCircle2 className="size-4 text-indigo-600 dark:text-indigo-400" />
+                              ) : null}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+
+                  {migrateState.error ? (
+                    <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
+                      {migrateState.error}
+                    </p>
+                  ) : null}
+                </>
+              )}
+            </div>
+
+            <footer className="flex justify-end gap-2 border-t border-neutral-200 px-5 py-3 dark:border-hub-border">
+              {migrateState.success ? (
+                <button
+                  type="button"
+                  onClick={() => setMigrateState(null)}
+                  className="rounded-md border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-hub-border dark:bg-hub-card dark:text-neutral-200 dark:hover:bg-white/5"
+                >
+                  Fechar
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setMigrateState(null)}
+                    disabled={migrate.isPending}
+                    className="rounded-md border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-hub-border dark:bg-hub-card dark:text-neutral-200 dark:hover:bg-white/5"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={startMigrate}
+                    disabled={!migrateState.targetWorkspaceId || migrate.isPending}
+                    className="flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40"
+                  >
+                    {migrate.isPending ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <ArrowRightLeft className="size-4" />
+                    )}
+                    Migrar
+                  </button>
+                </>
               )}
             </footer>
           </div>

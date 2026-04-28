@@ -2,6 +2,7 @@ import {
   IsArray,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   MaxLength,
   MinLength,
@@ -28,4 +29,9 @@ export class CreateDomainDto {
   @IsString({ each: true })
   @Matches(DOMAIN_RE, { each: true, message: 'Alias de domínio inválido' })
   aliases?: string[];
+}
+
+export class MigrateDomainDto {
+  @IsUUID()
+  targetWorkspaceId!: string;
 }

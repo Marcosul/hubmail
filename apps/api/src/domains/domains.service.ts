@@ -2,14 +2,16 @@ import { randomBytes } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DomainStatus, WebhookEventType } from '@prisma/client';
+import { DomainStatus, MembershipRole, WebhookEventType } from '@prisma/client';
 import { UnrecoverableError } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
+import type { WorkspaceContext } from '../tenancy/workspace-context';
 import { QueueService } from '../queue/queue.service';
 import type { StalwartDomainProvisionJob } from '../queue/queue.names';
 import { WebhookDispatcherService } from '../webhooks/webhook-dispatcher.service';
@@ -297,6 +299,120 @@ export class DomainsService {
 
     onEvent({ step: 'complete', mailboxesRemoved: domain.mailboxes.length, stalwartErrors });
     return { ok: true, mailboxesRemoved: domain.mailboxes.length, stalwartErrors };
+  }
+
+  async migrate(
+    source: WorkspaceContext,
+    actor: string,
+    domainId: string,
+    targetWorkspaceId: string,
+  ): Promise<{ ok: true; domainId: string; targetWorkspaceId: string }> {
+    if (targetWorkspaceId === source.workspaceId) {
+      throw new BadRequestException('O workspace de destino é o mesmo do atual');
+    }
+
+    if (source.role !== MembershipRole.OWNER && source.role !== MembershipRole.ADMIN) {
+      throw new ForbiddenException('Apenas OWNER ou ADMIN do workspace de origem podem migrar domínios');
+    }
+
+    const targetMembership = await this.prisma.membership.findUnique({
+      where: { userId_workspaceId: { userId: actor, workspaceId: targetWorkspaceId } },
+    });
+    if (!targetMembership) {
+      throw new ForbiddenException('Sem acesso ao workspace de destino');
+    }
+    if (
+      targetMembership.role !== MembershipRole.OWNER &&
+      targetMembership.role !== MembershipRole.ADMIN
+    ) {
+      throw new ForbiddenException('Precisa ser OWNER ou ADMIN no workspace de destino');
+    }
+
+    const domain = await this.prisma.domain.findFirst({
+      where: { id: domainId, workspaceId: source.workspaceId },
+      include: { _count: { select: { mailboxes: true } } },
+    });
+    if (!domain) throw new NotFoundException('Domínio não encontrado');
+
+    const conflict = await this.prisma.domain.findUnique({
+      where: { workspaceId_name: { workspaceId: targetWorkspaceId, name: domain.name } },
+    });
+    if (conflict) {
+      throw new ConflictException(`O workspace de destino já possui o domínio ${domain.name}`);
+    }
+
+    const targetPlan = await this.prisma.workspacePlan.findUnique({
+      where: { workspaceId: targetWorkspaceId },
+      include: { plan: true },
+    });
+    const maxDomains = targetPlan?.plan.maxDomains ?? DEFAULT_MAX_DOMAINS;
+    const maxInboxes = targetPlan?.plan.maxInboxes ?? 3;
+
+    const [targetDomainCount, targetMailboxCount] = await Promise.all([
+      this.prisma.domain.count({ where: { workspaceId: targetWorkspaceId } }),
+      this.prisma.mailbox.count({ where: { workspaceId: targetWorkspaceId } }),
+    ]);
+
+    if (targetDomainCount + 1 > maxDomains) {
+      throw new BadRequestException(
+        `Workspace de destino atingiu o limite de ${maxDomains} domínio(s)`,
+      );
+    }
+    if (targetMailboxCount + domain._count.mailboxes > maxInboxes) {
+      throw new BadRequestException(
+        `Workspace de destino não comporta as ${domain._count.mailboxes} mailbox(es) deste domínio (limite ${maxInboxes})`,
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.mailbox.updateMany({
+        where: { domainId },
+        data: { workspaceId: targetWorkspaceId },
+      });
+      await tx.mailGroup.updateMany({
+        where: { domainId },
+        data: { workspaceId: targetWorkspaceId },
+      });
+      await tx.outgoingMessage.updateMany({
+        where: { mailbox: { domainId } },
+        data: { workspaceId: targetWorkspaceId },
+      });
+      await tx.inboxEvent.updateMany({
+        where: { domainId },
+        data: { workspaceId: targetWorkspaceId },
+      });
+      await tx.domain.update({
+        where: { id: domainId },
+        data: { workspaceId: targetWorkspaceId },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          workspaceId: source.workspaceId,
+          actor,
+          action: 'domain.migrated_out',
+          subjectType: 'Domain',
+          subjectId: domainId,
+          data: { name: domain.name, targetWorkspaceId },
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          workspaceId: targetWorkspaceId,
+          actor,
+          action: 'domain.migrated_in',
+          subjectType: 'Domain',
+          subjectId: domainId,
+          data: { name: domain.name, sourceWorkspaceId: source.workspaceId },
+        },
+      });
+    });
+
+    this.log.log(
+      `\x1b[35m🚚\x1b[0m Domínio \x1b[36m${domain.name}\x1b[0m migrado de ${source.workspaceId} para ${targetWorkspaceId}`,
+    );
+
+    return { ok: true, domainId, targetWorkspaceId };
   }
 
   async getPlanInfo(workspaceId: string) {

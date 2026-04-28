@@ -8,7 +8,7 @@ import { CurrentWorkspace } from '../tenancy/current-workspace.decorator';
 import type { WorkspaceContext } from '../tenancy/workspace-context';
 import type { User } from '@supabase/supabase-js';
 import { DomainsService } from './domains.service';
-import { CreateDomainDto } from './dto/domain.dto';
+import { CreateDomainDto, MigrateDomainDto } from './dto/domain.dto';
 
 @UseGuards(SupabaseJwtAuthGuard, WorkspaceGuard)
 @Controller('domains')
@@ -42,6 +42,16 @@ export class DomainsController {
   @Post(':id/verify')
   verify(@CurrentWorkspace() ws: WorkspaceContext, @Param('id') id: string) {
     return this.domains.verify(ws.workspaceId, id);
+  }
+
+  @Post(':id/migrate')
+  migrate(
+    @CurrentWorkspace() ws: WorkspaceContext,
+    @CurrentUser() user: User,
+    @Param('id') id: string,
+    @Body() dto: MigrateDomainDto,
+  ) {
+    return this.domains.migrate(ws, user.id, id, dto.targetWorkspaceId);
   }
 
   @Delete(':id')

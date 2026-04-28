@@ -7,10 +7,10 @@ import {
   Bot,
   ChevronDown,
   Globe,
+  Boxes,
   Inbox,
   KeyRound,
   LayoutDashboard,
-  Leaf,
   ListFilter,
   LogOut,
   Menu,
@@ -47,7 +47,7 @@ const nav = [
   { href: "/api-keys", labelKey: "apiKeys", icon: KeyRound },
   { href: "/allow-block", labelKey: "allowBlock", icon: ListFilter },
   { href: "/metrics", labelKey: "metrics", icon: BarChart3 },
-  { href: "/pods", labelKey: "pods", icon: Leaf },
+  { href: "/workspaces", labelKey: "workspaces", icon: Boxes },
 ] as const;
 
 type AppSidebarProps = {
