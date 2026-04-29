@@ -24,7 +24,7 @@ type SubTab = "overview" | "testing" | "attempts" | "advanced";
 const TABS: { key: SubTab; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "testing", label: "Testing" },
-  { key: "attempts", label: "Message Attempts" },
+  { key: "attempts", label: "Events" },
   { key: "advanced", label: "Advanced" },
 ];
 

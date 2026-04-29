@@ -28,7 +28,7 @@ export function MessageAttemptsSection({ webhookId }: { webhookId: string }) {
           className="flex items-center gap-1 text-sm font-semibold"
         >
           {open ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-          Message Attempts
+          Events
         </button>
         <div className="flex items-center gap-1">
           <button

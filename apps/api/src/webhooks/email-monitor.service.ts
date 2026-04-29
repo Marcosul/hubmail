@@ -227,12 +227,21 @@ export class EmailMonitorService {
       );
 
       try {
-        const recipients = inferRecipients(email, mailbox.address);
+        // Fetch full email (with attachments + bodies) for the payload
+        const fullEmail = await this.jmap.getEmail(credentials, email.id);
+        const sourceEmail = fullEmail ?? email;
+        const attachments = await this.fetchAttachments(
+          credentials,
+          sourceEmail,
+        );
+
+        const recipients = inferRecipients(sourceEmail, mailbox.address);
         const payload = buildMessageReceivedPayload({
-          email,
+          email: sourceEmail,
           inboxId,
           inboxAddress: mailbox.address,
           recipients,
+          attachments,
         });
 
         await this.dispatcher.dispatch({
@@ -253,6 +262,133 @@ export class EmailMonitorService {
 
     return stats;
   }
+
+  /**
+   * Download attachments from JMAP and return them as base64 entries.
+   * Skips attachments above MAX_INLINE_BYTES; the webhook receiver can
+   * notice the missing payload via the `truncated: true` flag.
+   */
+  private async fetchAttachments(
+    credentials: { username: string; password: string },
+    email: {
+      attachments?: Array<{
+        blobId: string;
+        name?: string;
+        type?: string;
+        size?: number;
+        disposition?: string;
+        cid?: string;
+      }>;
+    },
+  ): Promise<WebhookAttachment[]> {
+    const list = email.attachments ?? [];
+    if (list.length === 0) return [];
+
+    const out: WebhookAttachment[] = [];
+    let idx = 0;
+    for (const att of list) {
+      idx += 1;
+      const filename = att.name ?? `attachment-${idx}`;
+      const mimetype = att.type ?? 'application/octet-stream';
+      const size = att.size ?? 0;
+      const fieldname = `attachment${idx}`;
+
+      if (size > MAX_INLINE_BYTES) {
+        out.push({
+          attachment_id: att.blobId,
+          fieldname,
+          originalname: filename,
+          filename,
+          mimetype,
+          size,
+          truncated: true,
+          reason: `Attachment exceeds ${MAX_INLINE_BYTES} bytes; not inlined`,
+          content_id: att.cid ?? null,
+          disposition: att.disposition ?? null,
+        });
+        continue;
+      }
+
+      try {
+        const { stream, contentType } = await this.jmap.downloadBlob(
+          credentials,
+          att.blobId,
+          { contentType: mimetype, name: filename },
+        );
+        const buffer = await readStreamToBuffer(stream);
+        const actualMime = contentType || mimetype;
+        const base64 = buffer.toString('base64');
+        out.push({
+          attachment_id: att.blobId,
+          fieldname,
+          originalname: filename,
+          filename,
+          mimetype: actualMime,
+          size: buffer.length,
+          base64: `data:${actualMime};base64,${base64}`,
+          content_id: att.cid ?? null,
+          disposition: att.disposition ?? null,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.log.warn(
+          `Failed to download attachment ${att.blobId} (${filename}): ${message}`,
+        );
+        out.push({
+          attachment_id: att.blobId,
+          fieldname,
+          originalname: filename,
+          filename,
+          mimetype,
+          size,
+          error: message,
+          content_id: att.cid ?? null,
+          disposition: att.disposition ?? null,
+        });
+      }
+    }
+    return out;
+  }
+}
+
+const MAX_INLINE_BYTES = 5 * 1024 * 1024; // 5 MB per attachment
+
+interface WebhookAttachment {
+  attachment_id: string;
+  fieldname: string;
+  originalname: string;
+  filename: string;
+  mimetype: string;
+  size: number;
+  base64?: string;
+  truncated?: boolean;
+  reason?: string;
+  error?: string;
+  content_id?: string | null;
+  disposition?: string | null;
+}
+
+async function readStreamToBuffer(
+  stream: ReadableStream<Uint8Array>,
+): Promise<Buffer> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    if (value) {
+      chunks.push(value);
+      total += value.byteLength;
+    }
+  }
+  const buf = Buffer.alloc(total);
+  let offset = 0;
+  for (const c of chunks) {
+    buf.set(c, offset);
+    offset += c.byteLength;
+  }
+  return buf;
 }
 
 function inferRecipients(
@@ -275,16 +411,28 @@ function buildMessageReceivedPayload(args: {
     bcc?: Array<{ email: string }> | null;
     replyTo?: Array<{ email: string }> | null;
     receivedAt: string;
+    bodyValues?: Record<string, { value: string }>;
+    htmlBody?: Array<{ partId?: string }>;
+    textBody?: Array<{ partId?: string }>;
+    inReplyTo?: string[] | null;
+    references?: string[] | null;
+    size?: number;
   };
   inboxId: string;
   inboxAddress: string;
   recipients: string[];
+  attachments: WebhookAttachment[];
 }): Record<string, unknown> {
-  const { email, inboxId, inboxAddress, recipients } = args;
+  const { email, inboxId, inboxAddress, recipients, attachments } = args;
   const fromStr = email.from?.[0]
     ? formatAddress(email.from[0])
     : null;
   const ts = new Date(email.receivedAt).toISOString();
+  const bodyValues = email.bodyValues ?? {};
+  const htmlPart = email.htmlBody?.[0]?.partId;
+  const textPart = email.textBody?.[0]?.partId;
+  const html = htmlPart ? bodyValues[htmlPart]?.value ?? null : null;
+  const text = textPart ? bodyValues[textPart]?.value ?? null : null;
 
   return {
     message: {
@@ -302,15 +450,15 @@ function buildMessageReceivedPayload(args: {
       created_at: ts,
       updated_at: ts,
       labels: ['Inbox'],
-      attachments: [],
+      attachments,
       headers: {},
-      html: null,
-      text: null,
-      extracted_html: null,
-      extracted_text: null,
-      in_reply_to: null,
-      references: [],
-      size: 0,
+      html,
+      text,
+      extracted_html: html,
+      extracted_text: text,
+      in_reply_to: email.inReplyTo?.[0] ?? null,
+      references: email.references ?? [],
+      size: email.size ?? 0,
     },
     thread: {
       thread_id: email.threadId,
@@ -327,8 +475,13 @@ function buildMessageReceivedPayload(args: {
       last_message_id: email.id,
       preview: email.preview ?? null,
       labels: ['Inbox'],
-      attachments: [],
-      size: 0,
+      attachments: attachments.map((a) => ({
+        attachment_id: a.attachment_id,
+        filename: a.filename,
+        mimetype: a.mimetype,
+        size: a.size,
+      })),
+      size: email.size ?? 0,
     },
   };
 }
