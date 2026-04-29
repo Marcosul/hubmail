@@ -10,17 +10,25 @@ import { WebhooksController } from './webhooks.controller';
 import { WebhooksService } from './webhooks.service';
 import { WebhookDispatcherModule } from './webhook-dispatcher.module';
 import { StalwartWebhooksAdapter } from './stalwart-webhooks.helper';
-import { WebhookEmailTriggerService } from './webhook-email-trigger.service';
+import { WebhookQueueService } from './webhook-queue.service';
+import { EmailMonitorService } from './email-monitor.service';
+import { WebhookQueueController } from './webhook-queue.controller';
 
 @Module({
   imports: [AuthModule, TenancyModule, PrismaModule, MailModule, WebhookDispatcherModule],
-  controllers: [MailWebhooksController, StalwartCallbackController, WebhooksController],
+  controllers: [
+    MailWebhooksController,
+    StalwartCallbackController,
+    WebhooksController,
+    WebhookQueueController,
+  ],
   providers: [
     WebhookSignatureService,
     WebhooksService,
     StalwartWebhooksAdapter,
-    WebhookEmailTriggerService,
+    WebhookQueueService,
+    EmailMonitorService,
   ],
-  exports: [WebhookSignatureService, WebhookDispatcherModule],
+  exports: [WebhookSignatureService, WebhookDispatcherModule, WebhookQueueService],
 })
 export class WebhooksModule {}
