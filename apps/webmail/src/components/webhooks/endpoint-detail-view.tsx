@@ -19,11 +19,12 @@ import { SigningSecretCard } from "./signing-secret-card";
 import { MessageAttemptsSection } from "./message-attempts-section";
 import { DeleteWebhookDialog } from "./delete-webhook-dialog";
 
-type SubTab = "overview" | "testing" | "advanced";
+type SubTab = "overview" | "testing" | "attempts" | "advanced";
 
 const TABS: { key: SubTab; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "testing", label: "Testing" },
+  { key: "attempts", label: "Message Attempts" },
   { key: "advanced", label: "Advanced" },
 ];
 
@@ -172,10 +173,9 @@ export function EndpointDetailView({ id }: { id: string }) {
           <div>
             {tab === "overview" && <EndpointOverviewTab webhook={webhook} />}
             {tab === "testing" && <EndpointTestingTab webhookId={webhook.id} />}
+            {tab === "attempts" && <MessageAttemptsSection webhookId={webhook.id} />}
             {tab === "advanced" && <EndpointAdvancedTab webhook={webhook} />}
           </div>
-
-          <MessageAttemptsSection webhookId={webhook.id} />
         </div>
 
         <aside className="space-y-5 text-sm">

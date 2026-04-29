@@ -14,7 +14,6 @@ import { StalwartWebhooksAdapter } from './stalwart-webhooks.helper';
 import { WebhookQueueService } from './webhook-queue.service';
 import { EmailMonitorService } from './email-monitor.service';
 import { WebhookQueueController } from './webhook-queue.controller';
-import { DiagnosticController } from './diagnostic.controller';
 
 @Module({
   imports: [
@@ -30,7 +29,6 @@ import { DiagnosticController } from './diagnostic.controller';
     StalwartCallbackController,
     WebhooksController,
     WebhookQueueController,
-    DiagnosticController,
   ],
   providers: [
     WebhookSignatureService,

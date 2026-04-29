@@ -45,20 +45,34 @@ export function EndpointTestingTab({ webhookId }: { webhookId: string }) {
             <strong>Note:</strong> Failed messages sent this way will not be retried.
           </p>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium">Send event</label>
-            <select
-              value={eventType}
-              onChange={(e) => setEventType(e.target.value as WebhookEventType)}
-              className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-hub-border dark:bg-hub-card"
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <div className="flex-1">
+              <label className="mb-1 block text-sm font-medium">Send event</label>
+              <select
+                value={eventType}
+                onChange={(e) => setEventType(e.target.value as WebhookEventType)}
+                className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-hub-border dark:bg-hub-card"
+              >
+                {(catalog ?? []).map((c) => (
+                  <option key={c.type} value={c.type}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="button"
+              onClick={onSend}
+              disabled={test.isPending}
+              className="flex h-[38px] items-center gap-1.5 rounded-md bg-neutral-900 px-4 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-neutral-900"
             >
-              {(catalog ?? []).map((c) => (
-                <option key={c.type} value={c.type}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+              <Send className="size-4" />
+              {test.isPending ? "Sending…" : "Send test event"}
+            </button>
           </div>
+          {result ? (
+            <p className="text-xs text-neutral-600 dark:text-neutral-300">{result}</p>
+          ) : null}
 
           <div className="grid gap-3 md:grid-cols-2">
             <div>
@@ -72,19 +86,6 @@ export function EndpointTestingTab({ webhookId }: { webhookId: string }) {
               <JsonBlock title={`Example ${eventName}`} value={example} />
             </div>
           </div>
-
-          <button
-            type="button"
-            onClick={onSend}
-            disabled={test.isPending}
-            className="flex items-center gap-1.5 rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-neutral-900"
-          >
-            <Send className="size-4" />
-            {test.isPending ? "Sending…" : "Send test event"}
-          </button>
-          {result ? (
-            <p className="text-xs text-neutral-600 dark:text-neutral-300">{result}</p>
-          ) : null}
         </div>
       </section>
     </div>
