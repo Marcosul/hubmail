@@ -27,7 +27,7 @@ function FieldNode({ field, depth = 0 }: { field: SchemaField; depth?: number })
   const expandable =
     field.kind === "object" ||
     (field.kind === "array[]" && field.itemKind === "object");
-  const [open, setOpen] = useState(depth < 1);
+  const [open, setOpen] = useState(false);
 
   const itemCount = field.children?.length ?? 0;
 
