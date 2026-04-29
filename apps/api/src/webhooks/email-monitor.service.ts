@@ -26,12 +26,35 @@ export class EmailMonitorService {
           enabled: true,
           events: { has: 'MESSAGE_RECEIVED' },
         },
-        distinct: ['inboxIds'],
       });
 
       const inboxIds = new Set<string>();
+
       for (const webhook of webhooks) {
-        (webhook.inboxIds ?? []).forEach((id) => inboxIds.add(id));
+        // If webhook has specific inboxIds, use those
+        if (webhook.inboxIds && webhook.inboxIds.length > 0) {
+          webhook.inboxIds.forEach((id) => inboxIds.add(id));
+        }
+        // If webhook has specific workspaceIds, add all inboxes from those workspaces
+        else if (webhook.workspaceIds && webhook.workspaceIds.length > 0) {
+          const inboxesInWorkspaces = await this.prisma.mailbox.findMany({
+            where: {
+              workspaceId: { in: webhook.workspaceIds },
+            },
+            select: { id: true },
+          });
+          inboxesInWorkspaces.forEach((inbox) => inboxIds.add(inbox.id));
+        }
+        // If no specific scope, monitor all inboxes in the webhook's workspace
+        else {
+          const inboxesInWorkspace = await this.prisma.mailbox.findMany({
+            where: {
+              workspaceId: webhook.workspaceId,
+            },
+            select: { id: true },
+          });
+          inboxesInWorkspace.forEach((inbox) => inboxIds.add(inbox.id));
+        }
       }
 
       // Scan each inbox for new emails

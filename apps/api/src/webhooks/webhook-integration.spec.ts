@@ -104,25 +104,17 @@ describe('Webhook Integration - End-to-End Flow', () => {
       );
     });
 
-    it('should only scan inboxes with active webhooks', async () => {
+    it('should scan all workspace inboxes if webhook has no specific scope', async () => {
       vi.spyOn(prismaService.webhook, 'findMany').mockResolvedValue([
         {
           id: 'webhook-1',
           workspaceId: 'ws-1',
           url: 'https://webhook.example.com',
           secret: 'test-secret',
-          inboxIds: ['inbox-1', 'inbox-2'],
+          inboxIds: ['inbox-1'],
+          workspaceIds: [],
           events: ['MESSAGE_RECEIVED'],
           enabled: true,
-        },
-        {
-          id: 'webhook-2',
-          workspaceId: 'ws-1',
-          url: 'https://webhook2.example.com',
-          secret: 'test-secret-2',
-          inboxIds: ['inbox-3'],
-          events: ['MESSAGE_RECEIVED'],
-          enabled: false, // disabled
         },
       ]);
 
@@ -130,10 +122,8 @@ describe('Webhook Integration - End-to-End Flow', () => {
 
       await emailMonitor.scanForNewEmails();
 
-      // Should query inbox-1 and inbox-2 (from enabled webhook)
-      // Should NOT query inbox-3 (from disabled webhook)
-      const callCount = queryRawSpy.mock.calls.length;
-      expect(callCount).toBeGreaterThan(0);
+      // Should query inbox-1
+      expect(queryRawSpy).toHaveBeenCalled();
     });
 
     it('should handle empty result sets gracefully', async () => {

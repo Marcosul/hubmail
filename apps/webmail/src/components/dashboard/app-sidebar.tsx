@@ -15,6 +15,8 @@ import {
   LogOut,
   Menu,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Settings,
   Sun,
@@ -61,6 +63,7 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
   const { locale, setLocale, messages } = useI18n();
   const [mounted, setMounted] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [addingWorkspace, setAddingWorkspace] = useState(false);
@@ -77,6 +80,27 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
     workspaces?.find((workspace) => workspace.id === activeWorkspaceId) ?? workspaces?.[0];
 
   useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem("hubmail.sidebar.collapsed");
+      if (stored === "1") setCollapsed(true);
+    } catch {}
+  }, []);
+
+  function toggleCollapsed() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem("hubmail.sidebar.collapsed", next ? "1" : "0");
+      } catch {}
+      if (next) {
+        setSettingsOpen(false);
+        setWorkspaceMenuOpen(false);
+      }
+      return next;
+    });
+  }
 
   useEffect(() => {
     const cookieId = getActiveWorkspaceId();
@@ -157,28 +181,54 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
 
   const SidebarContent = () => (
     <>
-      <div ref={workspaceMenuRef} className="relative flex h-14 items-center gap-2 border-b border-neutral-200 px-4 dark:border-hub-border">
-        <div className="flex size-8 items-center justify-center text-neutral-900 dark:text-white">
-          <HubMailMarkThemedTile className="size-4" />
-        </div>
-        <button
-          type="button"
-          onClick={() => setWorkspaceMenuOpen((open) => !open)}
-          className="flex min-w-0 flex-1 items-center justify-between gap-1 rounded-md px-2 py-1.5 text-left text-sm font-medium text-neutral-900 hover:bg-neutral-200/80 dark:text-white dark:hover:bg-white/5"
-          aria-expanded={workspaceMenuOpen}
-          aria-haspopup="true"
-        >
-          <span className="truncate">{activeWorkspace?.name ?? "HubMail"}</span>
-          <ChevronDown className="size-4 shrink-0 opacity-60" aria-hidden />
-        </button>
-        <button
-          type="button"
-          onClick={() => setMobileOpen(false)}
-          className="flex size-8 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-200/80 dark:hover:bg-white/5 lg:hidden"
-          aria-label={messages.sidebar.closeNavigation}
-        >
-          <X className="size-4" aria-hidden />
-        </button>
+      <div ref={workspaceMenuRef} className={cn(
+        "relative flex h-14 items-center border-b border-neutral-200 dark:border-hub-border",
+        collapsed ? "justify-center px-2" : "gap-2 px-4",
+      )}>
+        {collapsed ? (
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            className="hidden size-9 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-200/80 hover:text-neutral-800 dark:text-neutral-400 dark:hover:bg-white/5 dark:hover:text-neutral-200 lg:flex"
+            aria-label={messages.sidebar.openNavigation}
+            title={messages.sidebar.openNavigation}
+          >
+            <PanelLeftOpen className="size-4" aria-hidden />
+          </button>
+        ) : (
+          <>
+            <div className="flex size-8 items-center justify-center text-neutral-900 dark:text-white">
+              <HubMailMarkThemedTile className="size-4" />
+            </div>
+            <button
+              type="button"
+              onClick={() => setWorkspaceMenuOpen((open) => !open)}
+              className="flex min-w-0 flex-1 items-center justify-between gap-1 rounded-md px-2 py-1.5 text-left text-sm font-medium text-neutral-900 hover:bg-neutral-200/80 dark:text-white dark:hover:bg-white/5"
+              aria-expanded={workspaceMenuOpen}
+              aria-haspopup="true"
+            >
+              <span className="truncate">{activeWorkspace?.name ?? "HubMail"}</span>
+              <ChevronDown className="size-4 shrink-0 opacity-60" aria-hidden />
+            </button>
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              className="hidden size-8 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-200/80 hover:text-neutral-800 dark:text-neutral-400 dark:hover:bg-white/5 dark:hover:text-neutral-200 lg:flex"
+              aria-label={messages.sidebar.closeNavigation}
+              title={messages.sidebar.closeNavigation}
+            >
+              <PanelLeftClose className="size-4" aria-hidden />
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileOpen(false)}
+              className="flex size-8 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-200/80 dark:hover:bg-white/5 lg:hidden"
+              aria-label={messages.sidebar.closeNavigation}
+            >
+              <X className="size-4" aria-hidden />
+            </button>
+          </>
+        )}
         {workspaceMenuOpen ? (
           <div className="absolute left-12 right-4 top-12 z-50 rounded-md border border-neutral-200 bg-white p-1.5 shadow-lg dark:border-hub-border dark:bg-hub-card">
             <div className="max-h-56 space-y-1 overflow-y-auto">
@@ -263,7 +313,7 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
         ) : null}
       </div>
 
-      <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
+      <nav className={cn("flex-1 space-y-0.5 overflow-y-auto", collapsed ? "p-2" : "p-3")}>
         {nav.map(({ href, labelKey, icon: Icon, ...rest }) => {
           const exact = "exact" in rest ? (rest as { exact?: boolean }).exact : undefined;
           const active = isActive(href, exact);
@@ -273,62 +323,81 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
               key={href}
               href={href}
               onClick={() => setMobileOpen(false)}
+              title={collapsed ? label : undefined}
               className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                "flex items-center rounded-md text-sm transition-colors",
+                collapsed ? "justify-center p-2" : "gap-3 px-3 py-2",
                 active
                   ? "bg-neutral-200/90 font-medium text-neutral-950 dark:bg-white/10 dark:text-white"
                   : "text-neutral-600 hover:bg-neutral-200/60 dark:text-neutral-400 dark:hover:bg-white/5",
               )}
             >
               <Icon className="size-[18px] shrink-0 opacity-80" aria-hidden />
-              {label}
+              {collapsed ? null : label}
             </Link>
           );
         })}
       </nav>
 
-      <div className="space-y-1 border-t border-neutral-200 p-3 dark:border-hub-border">
-        <Link
-          href="/upgrade"
-          onClick={() => setMobileOpen(false)}
-          className={cn(
-            "flex items-center gap-2 rounded-md px-3 py-1.5 text-xs transition-colors",
-            isActive("/upgrade")
-              ? "bg-neutral-200/90 font-medium text-neutral-950 dark:bg-white/10 dark:text-white"
-              : "text-neutral-600 hover:bg-neutral-200/60 dark:text-neutral-400 dark:hover:bg-white/5",
-          )}
-        >
-          <CreditCard className="size-3.5" aria-hidden />
-          Upgrade
-        </Link>
-        <a
-          href="https://hubmail.to"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-200/60 dark:text-neutral-400 dark:hover:bg-white/5"
-        >
-          <MessageCircle className="size-3.5" aria-hidden />
-          Discord
-        </a>
-        <a
-          href="https://hubmail.to"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-200/60 dark:text-neutral-400 dark:hover:bg-white/5"
-        >
-          <BookOpen className="size-3.5" aria-hidden />
-          {messages.common.documentation}
-        </a>
-        <a
-          href="https://hubmail.to"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-200/60 dark:text-neutral-400 dark:hover:bg-white/5"
-        >
-          <MessageSquare className="size-3.5" aria-hidden />
-          {messages.common.feedback}
-        </a>
+      <div className={cn("space-y-1 border-t border-neutral-200 dark:border-hub-border", collapsed ? "p-2" : "p-3")}>
+        {collapsed ? null : (
+          <>
+            <Link
+              href="/upgrade"
+              onClick={() => setMobileOpen(false)}
+              className={cn(
+                "flex items-center gap-2 rounded-md px-3 py-1.5 text-xs transition-colors",
+                isActive("/upgrade")
+                  ? "bg-neutral-200/90 font-medium text-neutral-950 dark:bg-white/10 dark:text-white"
+                  : "text-neutral-600 hover:bg-neutral-200/60 dark:text-neutral-400 dark:hover:bg-white/5",
+              )}
+            >
+              <CreditCard className="size-3.5" aria-hidden />
+              Upgrade
+            </Link>
+            <a
+              href="https://hubmail.to"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-200/60 dark:text-neutral-400 dark:hover:bg-white/5"
+            >
+              <MessageCircle className="size-3.5" aria-hidden />
+              Discord
+            </a>
+            <a
+              href="https://hubmail.to"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-200/60 dark:text-neutral-400 dark:hover:bg-white/5"
+            >
+              <BookOpen className="size-3.5" aria-hidden />
+              {messages.common.documentation}
+            </a>
+            <a
+              href="https://hubmail.to"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-200/60 dark:text-neutral-400 dark:hover:bg-white/5"
+            >
+              <MessageSquare className="size-3.5" aria-hidden />
+              {messages.common.feedback}
+            </a>
+          </>
+        )}
 
+        {collapsed ? (
+          <div className="flex flex-col items-center gap-1">
+            <button
+              type="button"
+              onClick={handleSignOut}
+              title={messages.common.signOut}
+              aria-label={messages.common.signOut}
+              className="flex size-8 items-center justify-center rounded-full bg-neutral-300 text-xs font-medium text-neutral-700 hover:bg-neutral-400/80 dark:bg-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-600"
+            >
+              {userLabel.slice(0, 1).toUpperCase()}
+            </button>
+          </div>
+        ) : (
         <div ref={settingsMenuRef} className="relative rounded-md px-2 py-2">
           <div className="flex items-center gap-2">
             <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-neutral-300 text-xs font-medium text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
@@ -402,6 +471,7 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
             </div>
           ) : null}
         </div>
+        )}
       </div>
     </>
   );
@@ -436,7 +506,8 @@ export function AppSidebar({ userLabel }: AppSidebarProps) {
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-[min(20rem,calc(100vw-2rem))] flex-col border-r border-neutral-200 bg-neutral-50 transition-transform lg:static lg:z-auto lg:w-[260px] lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 flex w-[min(20rem,calc(100vw-2rem))] flex-col border-r border-neutral-200 bg-neutral-50 transition-[transform,width] lg:static lg:z-auto lg:translate-x-0",
+          collapsed ? "lg:w-14" : "lg:w-[260px]",
           mobileOpen ? "translate-x-0" : "-translate-x-full max-lg:pointer-events-none",
           "dark:border-hub-border dark:bg-[#0a0a0a]",
         )}
