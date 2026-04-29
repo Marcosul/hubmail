@@ -43,6 +43,12 @@ export class WorkspaceGuard implements CanActivate {
       throw new UnauthorizedException('Autenticação obrigatória antes de resolver workspace');
     }
 
+    // If the JWT guard already populated workspace (via API key path),
+    // skip the membership lookup — the workspace is bound to the key.
+    if (req.workspace) {
+      return true;
+    }
+
     const rawHeader =
       req.headers?.['x-workspace-id'] ??
       req.headers?.['X-Workspace-Id' as keyof typeof req.headers];
