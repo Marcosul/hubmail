@@ -37,6 +37,9 @@ function mapEvents(events: WebhookEventType[]): Record<string, boolean> {
 }
 
 interface UpsertInput {
+  /** ID do webhook hubmail — usado para construir a URL de callback do Stalwart. */
+  webhookId: string;
+  /** URL final do usuário (não enviada ao Stalwart, mas mantida no input por simetria). */
   url: string;
   signatureKey: string;
   events: WebhookEventType[];
@@ -62,6 +65,14 @@ export class StalwartWebhooksAdapter {
     const creds = this.creds();
     if (!creds) return null;
 
+    const callbackUrl = this.callbackUrl(input.webhookId);
+    if (!callbackUrl) {
+      this.log.warn(
+        'WEBHOOKS_PROXY_BASE_URL não configurada — Stalwart não será integrado para este webhook',
+      );
+      return null;
+    }
+
     const createKey = 'hubmailWebhook';
     const stalwartEvents = mapEvents(input.events);
     try {
@@ -71,7 +82,7 @@ export class StalwartWebhooksAdapter {
           {
             create: {
               [createKey]: {
-                url: input.url,
+                url: callbackUrl,
                 signatureKey: { '@type': 'Value', secret: input.signatureKey },
                 httpAuth: { '@type': 'Unauthenticated' },
                 events: stalwartEvents,
@@ -115,6 +126,8 @@ export class StalwartWebhooksAdapter {
   async update(stalwartId: string, input: UpsertInput): Promise<boolean> {
     const creds = this.creds();
     if (!creds) return false;
+    const callbackUrl = this.callbackUrl(input.webhookId);
+    if (!callbackUrl) return false;
     const stalwartEvents = mapEvents(input.events);
     try {
       const res = await this.jmap.invokeStalwartManagement(creds, [
@@ -123,7 +136,7 @@ export class StalwartWebhooksAdapter {
           {
             update: {
               [stalwartId]: {
-                url: input.url,
+                url: callbackUrl,
                 signatureKey: { '@type': 'Value', secret: input.signatureKey },
                 events: stalwartEvents,
                 eventsPolicy: 'include',
@@ -186,6 +199,17 @@ export class StalwartWebhooksAdapter {
     const password = this.config.get<string>('STALWART_MANAGEMENT_PASSWORD')?.trim();
     if (!username || !password) return null;
     return { username, password };
+  }
+
+  /**
+   * Constrói a URL de callback que o Stalwart deve atingir quando um evento
+   * for emitido. Hubmail então re-dispatcha em formato AgentMail para a URL
+   * final do usuário, com retries.
+   */
+  private callbackUrl(webhookId: string): string | null {
+    const base = this.config.get<string>('WEBHOOKS_PROXY_BASE_URL')?.trim();
+    if (!base) return null;
+    return `${base.replace(/\/+$/, '')}/webhooks/stalwart/${webhookId}`;
   }
 
   private firstError(

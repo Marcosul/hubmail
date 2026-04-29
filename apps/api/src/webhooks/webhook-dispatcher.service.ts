@@ -6,7 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { WEBHOOK_EVENT_PUBLIC_NAME } from './webhook-events.constants';
 
 const MAX_ATTEMPTS = 5;
-const TIMEOUT_MS = 10_000;
+const TIMEOUT_MS = Number(process.env.WEBHOOKS_REQUEST_TIMEOUT_MS ?? 30_000);
 const MAX_RESPONSE_BODY_CHARS = 1900;
 const ALLOW_PRIVATE_TARGETS = process.env.WEBHOOKS_ALLOW_PRIVATE_TARGETS === 'true';
 
@@ -133,6 +133,21 @@ export class WebhookDispatcherService {
     payload: Record<string, unknown>,
   ): Promise<void> {
     await this.attemptOnce(webhookId, url, secret, eventId, JSON.stringify(payload), 1);
+  }
+
+  /**
+   * Entrega com retries — usado pelo callback do Stalwart e por outros
+   * disparos não-teste. Fora de `dispatch()` para casos onde já temos um
+   * webhook específico (sem fan-out por workspace).
+   */
+  async deliverToWebhook(
+    webhookId: string,
+    url: string,
+    secret: string,
+    eventId: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    await this.deliverWithRetries(webhookId, url, secret, eventId, JSON.stringify(payload));
   }
 
   private async deliverWithRetries(

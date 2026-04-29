@@ -4,6 +4,7 @@ import { MailModule } from '../mail/mail.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { TenancyModule } from '../tenancy/tenancy.module';
 import { MailWebhooksController } from './mail-webhooks.controller';
+import { StalwartCallbackController } from './stalwart-callback.controller';
 import { WebhookSignatureService } from './webhook-signature.service';
 import { WebhooksController } from './webhooks.controller';
 import { WebhooksService } from './webhooks.service';
@@ -12,7 +13,7 @@ import { StalwartWebhooksAdapter } from './stalwart-webhooks.helper';
 
 @Module({
   imports: [AuthModule, TenancyModule, PrismaModule, MailModule, WebhookDispatcherModule],
-  controllers: [MailWebhooksController, WebhooksController],
+  controllers: [MailWebhooksController, StalwartCallbackController, WebhooksController],
   providers: [WebhookSignatureService, WebhooksService, StalwartWebhooksAdapter],
   exports: [WebhookSignatureService, WebhookDispatcherModule],
 })

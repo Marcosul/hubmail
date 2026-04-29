@@ -76,6 +76,7 @@ export class WebhooksService {
     let stalwartId: string | null = null;
     if (this.stalwart.isConfigured()) {
       stalwartId = await this.stalwart.create({
+        webhookId: created.id,
         url: dto.url,
         signatureKey: secret,
         events,
@@ -134,6 +135,7 @@ export class WebhooksService {
     if (this.stalwart.isConfigured()) {
       if (updated.stalwartId) {
         const ok = await this.stalwart.update(updated.stalwartId, {
+          webhookId: updated.id,
           url: updated.url,
           signatureKey: updated.secret,
           events: updated.events,
@@ -148,6 +150,7 @@ export class WebhooksService {
       } else {
         // Sem stalwartId — tenta criar agora (recuperação de falha anterior).
         const newId = await this.stalwart.create({
+          webhookId: updated.id,
           url: updated.url,
           signatureKey: updated.secret,
           events: updated.events,
@@ -216,6 +219,7 @@ export class WebhooksService {
 
     if (updated.stalwartId && this.stalwart.isConfigured()) {
       await this.stalwart.update(updated.stalwartId, {
+        webhookId: updated.id,
         url: updated.url,
         signatureKey: secret,
         events: updated.events,
