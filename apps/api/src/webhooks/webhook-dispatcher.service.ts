@@ -6,7 +6,15 @@ import { PrismaService } from '../prisma/prisma.service';
 import { WEBHOOK_EVENT_PUBLIC_NAME } from './webhook-events.constants';
 
 const MAX_ATTEMPTS = 5;
-const TIMEOUT_MS = Number(process.env.WEBHOOKS_REQUEST_TIMEOUT_MS ?? 30_000);
+// Default raised to 55s so destinations that respond synchronously after a
+// long workflow (e.g. AI pipelines) don't time out before responding.
+// In Vercel serverless the function budget is 60s, so this leaves ~5s of
+// headroom for the rest of the cron scan logic.
+const RAW_TIMEOUT = Number(process.env.WEBHOOKS_REQUEST_TIMEOUT_MS);
+const TIMEOUT_MS = Number.isFinite(RAW_TIMEOUT) && RAW_TIMEOUT > 0 ? RAW_TIMEOUT : 55_000;
+const RAW_MAX_ATTEMPTS = Number(process.env.WEBHOOKS_MAX_ATTEMPTS);
+const MAX_ATTEMPTS_PER_DISPATCH =
+  Number.isFinite(RAW_MAX_ATTEMPTS) && RAW_MAX_ATTEMPTS > 0 ? RAW_MAX_ATTEMPTS : 1;
 const MAX_RESPONSE_BODY_CHARS = 1900;
 const ALLOW_PRIVATE_TARGETS = process.env.WEBHOOKS_ALLOW_PRIVATE_TARGETS === 'true';
 
@@ -157,10 +165,14 @@ export class WebhookDispatcherService {
     eventId: string,
     body: string,
   ): Promise<void> {
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    // In Vercel serverless, sequential retries with backoff don't fit in
+    // the 60s function budget when the destination is slow. By default we
+    // do a single attempt; set WEBHOOKS_MAX_ATTEMPTS to override.
+    const attempts = Math.max(1, Math.min(MAX_ATTEMPTS_PER_DISPATCH, MAX_ATTEMPTS));
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
       const ok = await this.attemptOnce(webhookId, url, secret, eventId, body, attempt);
       if (ok) return;
-      if (attempt < MAX_ATTEMPTS) {
+      if (attempt < attempts) {
         await sleep(Math.min(2 ** attempt, 32) * 1000);
       }
     }
