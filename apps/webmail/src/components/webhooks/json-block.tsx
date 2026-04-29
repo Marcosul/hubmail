@@ -53,7 +53,7 @@ export function JsonBlock({ title, value, className }: Props) {
 
   return (
     <div
-      className={`overflow-hidden rounded-md border border-neutral-800 bg-neutral-950 text-xs text-neutral-100 ${className ?? ""}`}
+      className={`flex flex-col overflow-hidden rounded-md border border-neutral-800 bg-neutral-950 text-xs text-neutral-100 ${className ?? ""}`}
     >
       <div className="flex items-center justify-between border-b border-neutral-800 px-3 py-1.5">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
@@ -68,7 +68,7 @@ export function JsonBlock({ title, value, className }: Props) {
           {copied ? "Copiado" : "Copiar"}
         </button>
       </div>
-      <pre className="overflow-auto p-3 leading-relaxed">
+      <pre className="max-h-80 flex-1 overflow-y-auto p-3 leading-relaxed">
         <code dangerouslySetInnerHTML={{ __html: html }} />
       </pre>
     </div>
