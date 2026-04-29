@@ -15,6 +15,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { EmailMessage, MailFolderSummary } from "@hubmail/types";
+import { apiFetchAuthed } from "@/api/rest/generic";
 import { useMailFolders, usePatchMessage, useThread } from "@/hooks/use-mail";
 import type { ComposeDraft } from "@/components/inboxes/inbox-compose-provider";
 import { getLocaleDateFormat, useI18n } from "@/i18n/client";
@@ -740,7 +741,7 @@ function ThreadViewerBody({
     : [...data.messages].sort((a, b) => {
         const ta = new Date(a.receivedAt).getTime();
         const tb = new Date(b.receivedAt).getTime();
-        return ta - tb;
+        return tb - ta;
       });
 
   const trashFolderId = resolveSpecialFolderId(folders, "trash");
@@ -827,13 +828,14 @@ function ThreadViewerBody({
             {message.attachments.length > 0 ? (
               <footer className="mt-3 flex flex-wrap gap-2 border-t border-neutral-200 pt-3 dark:border-hub-border">
                 {message.attachments.map((a) => (
-                  <span
+                  <AttachmentChip
                     key={a.id ?? a.name}
-                    className="inline-flex items-center gap-1 rounded border border-neutral-200 bg-neutral-50 px-2 py-1 text-xs dark:border-hub-border dark:bg-hub-card"
-                  >
-                    <span className="font-medium">{a.name}</span>
-                    <span className="text-neutral-500">{(a.size / 1024).toFixed(1)} KB</span>
-                  </span>
+                    name={a.name}
+                    size={a.size}
+                    blobId={a.id}
+                    emailId={message.id}
+                    mailboxId={mailboxId}
+                  />
                 ))}
               </footer>
             ) : null}
@@ -841,6 +843,63 @@ function ThreadViewerBody({
         ))}
       </div>
     </div>
+  );
+}
+
+function AttachmentChip({
+  name,
+  size,
+  blobId,
+  emailId,
+  mailboxId,
+}: {
+  name: string;
+  size: number;
+  blobId?: string;
+  emailId: string;
+  mailboxId: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const canDownload = Boolean(blobId) && !emailId.startsWith("outgoing-message:");
+
+  const handleDownload = async () => {
+    if (!canDownload || busy || !blobId) return;
+    setBusy(true);
+    try {
+      const res = await apiFetchAuthed(
+        `/api/mail/messages/${encodeURIComponent(emailId)}/attachments/${encodeURIComponent(
+          blobId,
+        )}?mailboxId=${encodeURIComponent(mailboxId)}`,
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = name || "attachment";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      console.error("[attachment] download falhou", err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleDownload}
+      disabled={!canDownload || busy}
+      title={canDownload ? `Descarregar ${name}` : name}
+      className="inline-flex items-center gap-1.5 rounded border border-neutral-200 bg-neutral-50 px-2 py-1 text-xs transition hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-hub-border dark:bg-hub-card dark:hover:bg-hub-card/70"
+    >
+      <Download className="h-3.5 w-3.5 text-neutral-500" aria-hidden />
+      <span className="font-medium">{name}</span>
+      <span className="text-neutral-500">{(size / 1024).toFixed(1)} KB</span>
+    </button>
   );
 }
 

@@ -13,6 +13,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import type { User } from '@supabase/supabase-js';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { Readable } from 'node:stream';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { SupabaseJwtAuthGuard } from '../auth/guards/supabase-jwt-auth.guard';
 import { CurrentWorkspace } from '../tenancy/current-workspace.decorator';
@@ -141,6 +142,30 @@ export class MailController {
     @Query('mailboxId') mailboxId: string,
   ) {
     return this.mail.getMessageRaw(ws.workspaceId, mailboxId, emailId);
+  }
+
+  @Get('messages/:id/attachments/:blobId')
+  @ApiOperation({ summary: 'Descarrega o anexo de uma mensagem (streaming)' })
+  @ApiQuery({ name: 'mailboxId', required: true })
+  async downloadAttachment(
+    @CurrentWorkspace() ws: WorkspaceContext,
+    @Param('id') emailId: string,
+    @Param('blobId') blobId: string,
+    @Query('mailboxId') mailboxId: string,
+    @Res() reply: FastifyReply,
+  ): Promise<void> {
+    const { stream, contentType, contentLength, filename } =
+      await this.mail.downloadAttachment(ws.workspaceId, mailboxId, emailId, blobId);
+    const safeName = filename.replace(/"/g, '').replace(/[\r\n]/g, ' ');
+    const encodedName = encodeURIComponent(filename);
+    reply.header('Content-Type', contentType);
+    reply.header(
+      'Content-Disposition',
+      `attachment; filename="${safeName}"; filename*=UTF-8''${encodedName}`,
+    );
+    if (contentLength) reply.header('Content-Length', contentLength);
+    reply.header('Cache-Control', 'private, no-store');
+    await reply.send(Readable.fromWeb(stream as unknown as import('node:stream/web').ReadableStream));
   }
 
   @Patch('messages/:id')

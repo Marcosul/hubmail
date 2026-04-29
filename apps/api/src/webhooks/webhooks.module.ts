@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { ScheduleModule } from '@nestjs/schedule';
 import { AuthModule } from '../auth/auth.module';
 import { MailModule } from '../mail/mail.module';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -14,10 +13,10 @@ import { StalwartWebhooksAdapter } from './stalwart-webhooks.helper';
 import { WebhookQueueService } from './webhook-queue.service';
 import { EmailMonitorService } from './email-monitor.service';
 import { WebhookQueueController } from './webhook-queue.controller';
+import { WebhookCronController } from './webhook-cron.controller';
 
 @Module({
   imports: [
-    ScheduleModule.forRoot(),
     AuthModule,
     TenancyModule,
     PrismaModule,
@@ -29,6 +28,7 @@ import { WebhookQueueController } from './webhook-queue.controller';
     StalwartCallbackController,
     WebhooksController,
     WebhookQueueController,
+    WebhookCronController,
   ],
   providers: [
     WebhookSignatureService,

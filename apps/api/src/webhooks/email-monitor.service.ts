@@ -1,26 +1,43 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailboxesService } from '../mail/mailboxes.service';
+import { JmapClient } from '../mail/jmap.client';
 import { WebhookQueueService } from './webhook-queue.service';
 
 /**
- * Monitors new emails in mailboxes that have webhooks subscribed
- * and adds them to the Redis queue for processing.
+ * Monitors new emails in mailboxes that have webhooks subscribed.
+ *
+ * Architecture:
+ * - Emails are NOT stored in the API database; they live in Stalwart (JMAP).
+ * - This service queries JMAP for recent emails per inbox.
+ * - Idempotency: each detected email is recorded in `message_index` with a
+ *   unique [mailboxId, jmapId] constraint. If insert succeeds, the email is
+ *   new and we enqueue the webhook event. If it already exists, skip.
+ *
+ * Triggered via HTTP endpoint (Vercel Cron) — @Cron decorators don't run on
+ * Vercel serverless functions.
  */
 @Injectable()
 export class EmailMonitorService {
   private readonly log = new Logger(EmailMonitorService.name);
-  private lastScanTime = new Map<string, number>();
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly mailboxes: MailboxesService,
+    private readonly jmap: JmapClient,
     private readonly queueService: WebhookQueueService,
   ) {}
 
-  @Cron(CronExpression.EVERY_5_SECONDS)
-  async scanForNewEmails() {
+  async scanForNewEmails(): Promise<{
+    inboxesScanned: number;
+    newEmails: number;
+    errors: string[];
+  }> {
+    const errors: string[] = [];
+    let newEmails = 0;
+    const inboxesScanned = new Set<string>();
+
     try {
-      // Get all inboxes that have webhooks subscribed to MESSAGE_RECEIVED
       const webhooks = await this.prisma.webhook.findMany({
         where: {
           enabled: true,
@@ -28,100 +45,140 @@ export class EmailMonitorService {
         },
       });
 
-      const inboxIds = new Set<string>();
+      this.log.log(`Found ${webhooks.length} enabled webhook(s) for MESSAGE_RECEIVED`);
+
+      // Build map: inboxId -> workspaceId (so we can resolve credentials)
+      const inboxToWorkspace = new Map<string, string>();
 
       for (const webhook of webhooks) {
-        // If webhook has specific inboxIds, use those
         if (webhook.inboxIds && webhook.inboxIds.length > 0) {
-          webhook.inboxIds.forEach((id) => inboxIds.add(id));
-        }
-        // If webhook has specific workspaceIds, add all inboxes from those workspaces
-        else if (webhook.workspaceIds && webhook.workspaceIds.length > 0) {
-          const inboxesInWorkspaces = await this.prisma.mailbox.findMany({
-            where: {
-              workspaceId: { in: webhook.workspaceIds },
-            },
-            select: { id: true },
+          for (const inboxId of webhook.inboxIds) {
+            inboxToWorkspace.set(inboxId, webhook.workspaceId);
+          }
+        } else if (webhook.workspaceIds && webhook.workspaceIds.length > 0) {
+          const inboxes = await this.prisma.mailbox.findMany({
+            where: { workspaceId: { in: webhook.workspaceIds } },
+            select: { id: true, workspaceId: true },
           });
-          inboxesInWorkspaces.forEach((inbox) => inboxIds.add(inbox.id));
-        }
-        // If no specific scope, monitor all inboxes in the webhook's workspace
-        else {
-          const inboxesInWorkspace = await this.prisma.mailbox.findMany({
-            where: {
-              workspaceId: webhook.workspaceId,
-            },
-            select: { id: true },
+          for (const inbox of inboxes) {
+            inboxToWorkspace.set(inbox.id, inbox.workspaceId);
+          }
+        } else {
+          // No specific scope -> all inboxes in webhook's workspace
+          const inboxes = await this.prisma.mailbox.findMany({
+            where: { workspaceId: webhook.workspaceId },
+            select: { id: true, workspaceId: true },
           });
-          inboxesInWorkspace.forEach((inbox) => inboxIds.add(inbox.id));
+          for (const inbox of inboxes) {
+            inboxToWorkspace.set(inbox.id, inbox.workspaceId);
+          }
         }
       }
 
-      // Scan each inbox for new emails
-      for (const inboxId of inboxIds) {
-        await this.checkInboxForNewEmails(inboxId);
+      for (const [inboxId, workspaceId] of inboxToWorkspace) {
+        try {
+          const count = await this.checkInboxForNewEmails(workspaceId, inboxId);
+          inboxesScanned.add(inboxId);
+          newEmails += count;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          errors.push(`inbox ${inboxId}: ${message}`);
+          this.log.error(`Error scanning inbox ${inboxId}: ${message}`);
+        }
       }
     } catch (err) {
-      this.log.error(
-        `Error scanning for new emails: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      const message = err instanceof Error ? err.message : String(err);
+      errors.push(`scan failed: ${message}`);
+      this.log.error(`Scan failed: ${message}`);
     }
+
+    this.log.log(
+      `Scan complete: ${inboxesScanned.size} inbox(es), ${newEmails} new email(s), ${errors.length} error(s)`,
+    );
+
+    return {
+      inboxesScanned: inboxesScanned.size,
+      newEmails,
+      errors,
+    };
   }
 
-  private async checkInboxForNewEmails(inboxId: string) {
-    const lastCheck = this.lastScanTime.get(inboxId) ?? Date.now() - 60000;
-    const now = Date.now();
+  private async checkInboxForNewEmails(
+    workspaceId: string,
+    inboxId: string,
+  ): Promise<number> {
+    const { mailbox, credentials } = await this.mailboxes.resolveCredentials(
+      workspaceId,
+      inboxId,
+    );
 
-    try {
-      // Find new emails in this inbox since last scan
-      const newEmails = await this.prisma.$queryRaw<
-        Array<{
-          id: string;
-          external_id: string | null;
-          from: string | null;
-          subject: string | null;
-          created_at: Date;
-        }>
-      >`
-        SELECT DISTINCT ON (m.id)
-          m.id,
-          m.external_id,
-          m.from,
-          m.subject,
-          m.created_at
-        FROM mailbox_messages m
-        WHERE m.mailbox_id = ${inboxId}
-          AND m.created_at > to_timestamp(${lastCheck / 1000})
-          AND m.created_at <= to_timestamp(${now / 1000})
-        ORDER BY m.id DESC, m.created_at DESC
-        LIMIT 50
-      `;
+    // Query recent emails from JMAP (most recent first, top 50)
+    const result = await this.jmap.listThreads(credentials, {
+      mailboxId: undefined, // all folders within this account
+      cursor: 0,
+      limit: 50,
+    });
 
-      if (newEmails.length > 0) {
-        this.log.log(
-          `📧 Found ${newEmails.length} new email(s) in inbox ${inboxId}`,
-        );
-
-        // Queue each email for webhook processing
-        for (const email of newEmails) {
-          await this.queueService.enqueueEmailEvent({
-            inboxId,
-            emailId: email.id,
-            emailExternalId: email.external_id || undefined,
-            from: email.from || undefined,
-            subject: email.subject || undefined,
-            createdAt: email.created_at,
-          });
-        }
-      }
-
-      this.lastScanTime.set(inboxId, now);
-    } catch (err) {
-      this.log.error(
-        `Error checking inbox ${inboxId}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
+    if (!result.emails || result.emails.length === 0) {
+      return 0;
     }
+
+    let newCount = 0;
+
+    for (const email of result.emails) {
+      // Skip drafts (keyword $draft) — only trigger for received messages
+      if (email.keywords?.['$draft']) continue;
+
+      // Skip outgoing/sent (keyword $sent) — those have their own webhook (MESSAGE_SENT)
+      if (email.keywords?.['$sent']) continue;
+
+      // Try to insert into message_index. If unique constraint fails, email
+      // was already seen — skip. If insert succeeds, email is new.
+      try {
+        await this.prisma.messageIndex.create({
+          data: {
+            mailboxId: inboxId,
+            jmapId: email.id,
+            threadId: email.threadId ?? null,
+            subject: email.subject ?? null,
+            fromAddr: email.from?.[0]?.email ?? null,
+            receivedAt: new Date(email.receivedAt),
+            snippet: email.preview ?? null,
+            flags: Object.keys(email.keywords ?? {}),
+          },
+        });
+
+        // Insert succeeded — this is a new email. Enqueue webhook event.
+        await this.queueService.enqueueEmailEvent({
+          inboxId,
+          emailId: email.id,
+          emailExternalId: email.id,
+          from: email.from?.[0]?.email ?? undefined,
+          subject: email.subject ?? undefined,
+          createdAt: new Date(email.receivedAt),
+        });
+
+        newCount += 1;
+        this.log.log(
+          `📧 New email detected in ${mailbox.address}: ${email.subject ?? '(no subject)'} (${email.id})`,
+        );
+      } catch (err) {
+        // Unique constraint violation = already seen, skip silently
+        const message = err instanceof Error ? err.message : String(err);
+        if (
+          message.includes('Unique constraint') ||
+          message.includes('P2002') ||
+          message.includes('duplicate key')
+        ) {
+          continue;
+        }
+        // Other error — log but don't abort the scan
+        this.log.warn(
+          `Failed to record email ${email.id} in ${inboxId}: ${message}`,
+        );
+      }
+    }
+
+    return newCount;
   }
 }

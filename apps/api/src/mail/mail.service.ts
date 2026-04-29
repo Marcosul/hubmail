@@ -362,6 +362,35 @@ export class MailService {
     return this.mapEmail(email);
   }
 
+  async downloadAttachment(
+    workspaceId: string,
+    mailboxId: string,
+    emailId: string,
+    blobId: string,
+  ): Promise<{
+    stream: ReadableStream<Uint8Array>;
+    contentType: string;
+    contentLength: string | null;
+    filename: string;
+  }> {
+    if (emailId.startsWith('outgoing-message:')) {
+      throw new NotFoundException('Anexo não encontrado');
+    }
+    const { credentials } = await this.mailboxes.resolveCredentials(workspaceId, mailboxId);
+    const email = await this.withJmapGuard(workspaceId, mailboxId, () =>
+      this.jmap.getEmail(credentials, emailId),
+    );
+    if (!email) throw new NotFoundException('Email não encontrado');
+    const att = (email.attachments ?? []).find((a) => a.blobId === blobId);
+    if (!att) throw new NotFoundException('Anexo não encontrado');
+    const filename = att.name?.trim() || 'attachment';
+    const { stream, contentType, contentLength } = await this.jmap.downloadBlob(credentials, blobId, {
+      contentType: att.type,
+      name: filename,
+    });
+    return { stream, contentType, contentLength, filename };
+  }
+
   async patch(workspaceId: string, emailId: string, patch: PatchMessageDto) {
     /** Enviados HubMail vêm da tabela `outgoing_messages` — não existem no JMAP. */
     if (emailId.startsWith('outgoing-message:')) {

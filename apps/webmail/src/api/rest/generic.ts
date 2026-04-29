@@ -133,6 +133,23 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
   });
 }
 
+export async function apiFetchAuthed(
+  path: string,
+  init: RequestInit = {},
+  workspaceId?: string,
+): Promise<Response> {
+  const authHeader: Record<string, string> = {};
+  const token = await resolveAccessToken();
+  if (token) authHeader.Authorization = `Bearer ${token}`;
+  const ws = workspaceId ?? getActiveWorkspaceId();
+  if (ws) authHeader["X-Workspace-Id"] = ws;
+  return fetch(getRequestUrl(path), {
+    ...init,
+    credentials: init.credentials ?? "include",
+    headers: mergeHeaders(authHeader, init.headers),
+  });
+}
+
 export async function apiRequest<TResponse>(
   path: string,
   options: RequestOptions = {},

@@ -11,6 +11,12 @@
       "includeFiles": "../../node_modules/.pnpm/@prisma+*/**"
     }
   },
+  "crons": [
+    {
+      "path": "/webhooks/cron/scan-emails",
+      "schedule": "* * * * *"
+    }
+  ],
   "rewrites": [
     { "source": "/(.*)", "destination": "/api" }
   ]

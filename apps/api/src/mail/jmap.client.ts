@@ -557,6 +557,33 @@ export class JmapClient {
     return list[0] ?? null;
   }
 
+  async downloadBlob(
+    creds: JmapCredentials,
+    blobId: string,
+    opts: { contentType?: string; name?: string },
+  ): Promise<{ stream: ReadableStream<Uint8Array>; contentType: string; contentLength: string | null }> {
+    const session = await this.getSession(creds);
+    const accountId = this.primaryAccountId(session);
+    const type = opts.contentType?.trim() || 'application/octet-stream';
+    const name = opts.name?.trim() || 'attachment';
+    const url = session.downloadUrl
+      .replace('{accountId}', encodeURIComponent(accountId))
+      .replace('{blobId}', encodeURIComponent(blobId))
+      .replace('{type}', encodeURIComponent(type))
+      .replace('{name}', encodeURIComponent(name));
+    const res = await fetch(url, { headers: { Authorization: this.authHeader(creds) } });
+    if (!res.ok || !res.body) {
+      const text = res.body ? await res.text() : '';
+      this.log.error(`${c.red}❌ JMAP download falhou (${res.status}):${c.reset} ${text}`);
+      throw new BadGatewayException(`JMAP download falhou: ${res.status}`);
+    }
+    return {
+      stream: res.body,
+      contentType: res.headers.get('content-type') ?? type,
+      contentLength: res.headers.get('content-length'),
+    };
+  }
+
   async patchEmail(
     creds: JmapCredentials,
     emailId: string,
