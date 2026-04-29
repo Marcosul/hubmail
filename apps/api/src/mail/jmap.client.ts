@@ -566,11 +566,18 @@ export class JmapClient {
     const accountId = this.primaryAccountId(session);
     const type = opts.contentType?.trim() || 'application/octet-stream';
     const name = opts.name?.trim() || 'attachment';
-    const url = session.downloadUrl
-      .replace('{accountId}', encodeURIComponent(accountId))
-      .replace('{blobId}', encodeURIComponent(blobId))
-      .replace('{type}', encodeURIComponent(type))
-      .replace('{name}', encodeURIComponent(name));
+    // Stalwart returns the downloadUrl template with URL-encoded braces
+    // (e.g. %7BaccountId%7D), so substitute both raw and encoded variants.
+    const substitute = (template: string, key: string, value: string) =>
+      template
+        .replace(`{${key}}`, value)
+        .replace(`%7B${key}%7D`, value)
+        .replace(`%7b${key}%7d`, value);
+    let url = session.downloadUrl;
+    url = substitute(url, 'accountId', encodeURIComponent(accountId));
+    url = substitute(url, 'blobId', encodeURIComponent(blobId));
+    url = substitute(url, 'type', encodeURIComponent(type));
+    url = substitute(url, 'name', encodeURIComponent(name));
     const res = await fetch(url, { headers: { Authorization: this.authHeader(creds) } });
     if (!res.ok || !res.body) {
       const text = res.body ? await res.text() : '';
@@ -579,9 +586,7 @@ export class JmapClient {
         `[jmap.downloadBlob] ${res.status} url=${url} blobId=${blobId} accountId=${accountId} responseBody=${text.slice(0, 500)}`,
       );
       this.log.error(`${c.red}❌ JMAP download falhou (${res.status}):${c.reset} ${text}`);
-      throw new BadGatewayException(
-        `JMAP download falhou: ${res.status} url=${url} body=${text.slice(0, 200)}`,
-      );
+      throw new BadGatewayException(`JMAP download falhou: ${res.status}`);
     }
     return {
       stream: res.body,
