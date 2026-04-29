@@ -13,7 +13,6 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import type { User } from '@supabase/supabase-js';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { Readable } from 'node:stream';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { SupabaseJwtAuthGuard } from '../auth/guards/supabase-jwt-auth.guard';
 import { CurrentWorkspace } from '../tenancy/current-workspace.decorator';
@@ -145,7 +144,7 @@ export class MailController {
   }
 
   @Get('messages/:id/attachments/:blobId')
-  @ApiOperation({ summary: 'Descarrega o anexo de uma mensagem (streaming)' })
+  @ApiOperation({ summary: 'Descarrega o anexo de uma mensagem' })
   @ApiQuery({ name: 'mailboxId', required: true })
   async downloadAttachment(
     @CurrentWorkspace() ws: WorkspaceContext,
@@ -154,8 +153,30 @@ export class MailController {
     @Query('mailboxId') mailboxId: string,
     @Res() reply: FastifyReply,
   ): Promise<void> {
-    const { stream, contentType, contentLength, filename } =
+    const { stream, contentType, filename } =
       await this.mail.downloadAttachment(ws.workspaceId, mailboxId, emailId, blobId);
+
+    // Buffer the stream because Vercel serverless functions don't reliably
+    // support response streaming through Fastify's request-emit shim.
+    const reader = stream.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value) {
+        chunks.push(value);
+        total += value.byteLength;
+      }
+    }
+    const buffer = Buffer.alloc(total);
+    let offset = 0;
+    for (const c of chunks) {
+      buffer.set(c, offset);
+      offset += c.byteLength;
+    }
+
     const safeName = filename.replace(/"/g, '').replace(/[\r\n]/g, ' ');
     const encodedName = encodeURIComponent(filename);
     reply.header('Content-Type', contentType);
@@ -163,9 +184,9 @@ export class MailController {
       'Content-Disposition',
       `attachment; filename="${safeName}"; filename*=UTF-8''${encodedName}`,
     );
-    if (contentLength) reply.header('Content-Length', contentLength);
+    reply.header('Content-Length', String(buffer.length));
     reply.header('Cache-Control', 'private, no-store');
-    await reply.send(Readable.fromWeb(stream as unknown as import('node:stream/web').ReadableStream));
+    await reply.send(buffer);
   }
 
   @Patch('messages/:id')
