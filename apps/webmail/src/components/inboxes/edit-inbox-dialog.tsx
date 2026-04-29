@@ -1,12 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, X } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, Loader2, RefreshCw, X } from "lucide-react";
 import { useI18n } from "@/i18n/client";
-import { useMailboxDetails, useUpdateMailbox } from "@/hooks/use-mail";
+import {
+  useMailboxDetails,
+  useRegenerateMailboxCredential,
+  useRevealMailboxCredential,
+  useUpdateMailbox,
+} from "@/hooks/use-mail";
 import type { MailboxDetails, UpdateMailboxInput } from "@hubmail/types";
 
-type Tab = "general" | "aliases" | "quotas" | "advanced";
+type Tab = "general" | "aliases" | "quotas" | "credentials" | "advanced";
 
 interface Props {
   mailboxId: string;
@@ -144,6 +149,7 @@ export function EditInboxDialog({ mailboxId, address, onClose }: Props) {
     { id: "general", label: copy.tabGeneral },
     { id: "aliases", label: copy.tabAliases },
     { id: "quotas", label: copy.tabQuotas },
+    { id: "credentials", label: copy.tabCredentials },
     { id: "advanced", label: copy.tabAdvanced },
   ];
 
@@ -282,6 +288,8 @@ export function EditInboxDialog({ mailboxId, address, onClose }: Props) {
                 )}
               </ul>
             </div>
+          ) : tab === "credentials" ? (
+            <CredentialsTab mailboxId={mailboxId} address={address} />
           ) : tab === "quotas" ? (
             <div className="space-y-4">
               <Field label={copy.quotaLabel} hint={copy.quotaHelp}>
@@ -390,5 +398,146 @@ function Field({
       {children}
       {hint ? <span className="mt-1 block text-[11px] text-neutral-500 dark:text-neutral-400">{hint}</span> : null}
     </label>
+  );
+}
+
+function CredentialsTab({ mailboxId, address }: { mailboxId: string; address: string }) {
+  const [revealed, setRevealed] = useState(false);
+  const [show, setShow] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const reveal = useRevealMailboxCredential(mailboxId, revealed);
+  const regen = useRegenerateMailboxCredential();
+
+  const password = reveal.data?.password ?? "";
+  const username = reveal.data?.username ?? address;
+
+  async function copy() {
+    if (!password) return;
+    try {
+      await navigator.clipboard.writeText(password);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function regenerate() {
+    setError(null);
+    setConfirming(false);
+    try {
+      const out = await regen.mutateAsync({ mailboxId });
+      // Atualiza visivelmente
+      setShow(true);
+      // O hook invalida e o reveal-query faz refetch
+      await reveal.refetch();
+      // failsafe: se o user não tinha revelado ainda, mostra a senha gerada
+      if (!revealed) {
+        setRevealed(true);
+      }
+      // O servidor já devolve a nova senha, então força exibição mesmo sem refetch
+      void out;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao gerar nova senha");
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-700/40 dark:bg-amber-900/20 dark:text-amber-300">
+        <strong>Importante:</strong> esta é a app-password gerada pelo Stalwart para esta conta.
+        Use-a em clientes IMAP/SMTP ou nas notificações transacionais (variável <code>NOTIFICATION_SMTP_PASS</code>).
+        Ao gerar uma nova, atualize onde estiver em uso.
+      </div>
+
+      <Field label="Utilizador">
+        <input value={username} readOnly className={inputCls + " font-mono"} />
+      </Field>
+
+      <Field label="Senha">
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <input
+              type={show ? "text" : "password"}
+              value={revealed ? password : "•••••••••••••••••••••"}
+              readOnly
+              className={inputCls + " pr-10 font-mono"}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (!revealed) setRevealed(true);
+                setShow((s) => !s);
+              }}
+              className="absolute inset-y-0 right-0 flex items-center px-3 text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
+              aria-label={show ? "Ocultar" : "Mostrar"}
+            >
+              {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={copy}
+            disabled={!revealed || !password}
+            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-hub-border dark:text-neutral-200 dark:hover:bg-white/5"
+          >
+            {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+            {copied ? "Copiado" : "Copiar"}
+          </button>
+        </div>
+      </Field>
+
+      {reveal.isLoading && revealed && (
+        <p className="text-xs text-neutral-500">A obter senha…</p>
+      )}
+      {reveal.isError && (
+        <p className="text-xs text-red-600">
+          {(reveal.error as Error)?.message ?? "Falha ao obter senha"}
+        </p>
+      )}
+      {error && <p className="text-xs text-red-600">{error}</p>}
+
+      <div className="flex flex-col gap-2 border-t border-neutral-200 pt-3 sm:flex-row sm:items-center sm:justify-between dark:border-hub-border">
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          Gerar nova senha cria uma nova app-password no Stalwart e substitui a guardada.
+        </p>
+        {!confirming ? (
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            disabled={regen.isPending}
+            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-hub-border dark:text-neutral-200 dark:hover:bg-white/5"
+          >
+            <RefreshCw className="size-4" /> Gerar nova senha
+          </button>
+        ) : (
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirming(false)}
+              className="rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50 dark:border-hub-border dark:text-neutral-200 dark:hover:bg-white/5"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={regenerate}
+              disabled={regen.isPending}
+              className="inline-flex items-center gap-1 rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+            >
+              {regen.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <RefreshCw className="size-4" />
+              )}
+              Confirmar
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

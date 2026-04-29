@@ -1,10 +1,32 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Search } from "lucide-react";
 import type { WebhookCatalogItem, WebhookEventType } from "@hubmail/types";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/client";
+
+function GroupCheckbox({
+  state,
+  onChange,
+}: {
+  state: "checked" | "unchecked" | "indeterminate";
+  onChange: (next: boolean) => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = state === "indeterminate";
+  }, [state]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={state === "checked"}
+      onChange={(e) => onChange(e.target.checked)}
+      onClick={(e) => e.stopPropagation()}
+    />
+  );
+}
 
 interface Props {
   catalog: WebhookCatalogItem[];
@@ -66,6 +88,31 @@ export function EventCheckboxTree({ catalog, selected, onChange }: Props) {
     else onChange(selected.filter((x) => x !== t));
   };
 
+  const groupItems = (g: Group): WebhookCatalogItem[] => [
+    ...g.items,
+    ...g.children.flatMap((c) => c.items),
+  ];
+
+  const groupState = (
+    items: WebhookCatalogItem[],
+  ): "checked" | "unchecked" | "indeterminate" => {
+    if (items.length === 0) return "unchecked";
+    const sel = items.filter((it) => isChecked(it.type)).length;
+    if (sel === 0) return "unchecked";
+    if (sel === items.length) return "checked";
+    return "indeterminate";
+  };
+
+  const setGroupChecked = (items: WebhookCatalogItem[], v: boolean) => {
+    const types = items.map((it) => it.type);
+    if (v) {
+      onChange(Array.from(new Set([...selected, ...types])));
+    } else {
+      const remove = new Set(types);
+      onChange(selected.filter((x) => !remove.has(x)));
+    }
+  };
+
   return (
     <div className="rounded-md border border-neutral-200 dark:border-hub-border">
       <div className="flex items-center gap-2 border-b border-neutral-200 px-3 py-2 dark:border-hub-border">
@@ -84,14 +131,20 @@ export function EventCheckboxTree({ catalog, selected, onChange }: Props) {
           if (!visible.length && !childVisible.length && query) return null;
           return (
             <li key={g.label}>
-              <button
-                type="button"
-                onClick={() => toggle(g.label)}
-                className="flex w-full items-center gap-1 px-3 py-1 text-left font-medium text-neutral-700 hover:bg-neutral-50 dark:text-neutral-200 dark:hover:bg-white/5"
-              >
-                {open[g.label] ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-                {g.label}
-              </button>
+              <div className="flex w-full items-center gap-2 px-3 py-1 font-medium text-neutral-700 hover:bg-neutral-50 dark:text-neutral-200 dark:hover:bg-white/5">
+                <GroupCheckbox
+                  state={groupState(groupItems(g))}
+                  onChange={(v) => setGroupChecked(groupItems(g), v)}
+                />
+                <button
+                  type="button"
+                  onClick={() => toggle(g.label)}
+                  className="flex flex-1 items-center gap-1 text-left"
+                >
+                  {open[g.label] ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                  {g.label}
+                </button>
+              </div>
               {open[g.label] &&
                 visible.map((it) => (
                   <label
@@ -112,14 +165,20 @@ export function EventCheckboxTree({ catalog, selected, onChange }: Props) {
                   if (!cv.length && query) return null;
                   return (
                     <div key={c.label}>
-                      <button
-                        type="button"
-                        onClick={() => toggle(c.label)}
-                        className="flex w-full items-center gap-1 px-6 py-1 text-left font-medium text-neutral-700 hover:bg-neutral-50 dark:text-neutral-200 dark:hover:bg-white/5"
-                      >
-                        {open[c.label] ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-                        {c.label}
-                      </button>
+                      <div className="flex w-full items-center gap-2 px-6 py-1 font-medium text-neutral-700 hover:bg-neutral-50 dark:text-neutral-200 dark:hover:bg-white/5">
+                        <GroupCheckbox
+                          state={groupState(c.items)}
+                          onChange={(v) => setGroupChecked(c.items, v)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => toggle(c.label)}
+                          className="flex flex-1 items-center gap-1 text-left"
+                        >
+                          {open[c.label] ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                          {c.label}
+                        </button>
+                      </div>
                       {open[c.label] &&
                         cv.map((it) => (
                           <label

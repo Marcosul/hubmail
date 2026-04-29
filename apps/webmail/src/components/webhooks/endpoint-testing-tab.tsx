@@ -4,30 +4,7 @@ import { useState } from "react";
 import { Send } from "lucide-react";
 import type { WebhookEventType } from "@hubmail/types";
 import { useTestWebhook, useWebhookCatalog } from "@/hooks/use-webhooks";
-
-const EXAMPLES: Record<string, Record<string, unknown>> = {
-  "domain.verified": {
-    domain: { domain_id: "string", name: "string", status: "VERIFIED" },
-  },
-  "message.received": {
-    message: {
-      message_id: "string",
-      inbox_id: "string",
-      from: "string",
-      to: ["string"],
-      subject: "string",
-      timestamp: "2026-04-28T12:00:00.000Z",
-    },
-  },
-  "message.sent": {
-    send: {
-      message_id: "string",
-      inbox_id: "string",
-      recipients: ["string"],
-      timestamp: "2026-04-28T12:00:00.000Z",
-    },
-  },
-};
+import { getWebhookSample } from "@/lib/webhook-samples";
 
 export function EndpointTestingTab({ webhookId }: { webhookId: string }) {
   const { data: catalog } = useWebhookCatalog();
@@ -36,13 +13,7 @@ export function EndpointTestingTab({ webhookId }: { webhookId: string }) {
   const [result, setResult] = useState<string | null>(null);
 
   const selectedItem = catalog?.find((c) => c.type === eventType);
-  const sample = selectedItem ? EXAMPLES[selectedItem.name] ?? {} : {};
-  const example = {
-    event_id: "string",
-    event_type: selectedItem?.name ?? "",
-    type: "event",
-    ...sample,
-  };
+  const example = getWebhookSample(selectedItem?.name ?? "");
 
   const onSend = async () => {
     setResult(null);

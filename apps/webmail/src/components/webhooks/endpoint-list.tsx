@@ -18,6 +18,7 @@ import {
   useUpdateWebhook,
   useWebhookEndpoints,
 } from "@/hooks/use-webhooks";
+import { DeleteWebhookDialog } from "./delete-webhook-dialog";
 
 export function EndpointList() {
   const { messages } = useI18n();
@@ -26,6 +27,7 @@ export function EndpointList() {
   const update = useUpdateWebhook();
   const remove = useDeleteWebhook();
   const [searchQuery, setSearchQuery] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; url: string } | null>(null);
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -100,9 +102,7 @@ export function EndpointList() {
                   icon: Trash2,
                   danger: true,
                   separatorAbove: true,
-                  onClick: () => {
-                    if (confirm(copy.confirmDelete)) remove.mutate(w.id);
-                  },
+                  onClick: () => setPendingDelete({ id: w.id, url: w.url }),
                 },
               ];
               return (
@@ -145,6 +145,20 @@ export function EndpointList() {
           <DataListEmpty description={searchQuery ? `Nenhum resultado para "${searchQuery}"` : copy.empty} />
         )}
       </DataList>
+
+      {pendingDelete && (
+        <DeleteWebhookDialog
+          webhookUrl={pendingDelete.url}
+          isDeleting={remove.isPending}
+          onConfirm={() =>
+            remove.mutate(pendingDelete.id, {
+              onSuccess: () => setPendingDelete(null),
+            })
+          }
+          onCancel={() => setPendingDelete(null)}
+          error={remove.isError ? remove.error : null}
+        />
+      )}
     </section>
   );
 }

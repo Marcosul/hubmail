@@ -262,6 +262,42 @@ export function useRotateMailboxCredential() {
   });
 }
 
+export type MailboxCredentialReveal = {
+  username: string;
+  password: string;
+  rotatedAt: string | Date | null;
+  createdAt: string | Date;
+};
+
+export function useRevealMailboxCredential(mailboxId: string | undefined, enabled: boolean) {
+  return useQuery<MailboxCredentialReveal>({
+    queryKey: ["mailbox-credential", mailboxId],
+    queryFn: () =>
+      apiRequest<MailboxCredentialReveal>(
+        `/api/mailboxes/${encodeURIComponent(mailboxId!)}/credential`,
+      ),
+    enabled: Boolean(mailboxId) && enabled,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useRegenerateMailboxCredential() {
+  const qc = useQueryClient();
+  return useMutation<{ username: string; password: string }, Error, { mailboxId: string }>({
+    mutationFn: ({ mailboxId }) =>
+      apiRequest<{ username: string; password: string }>(
+        `/api/mailboxes/${encodeURIComponent(mailboxId)}/credential/regenerate`,
+        { method: "POST" },
+      ),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ["mailbox-credential", vars.mailboxId] });
+      qc.invalidateQueries({ queryKey: ["mailbox-details", vars.mailboxId] });
+    },
+  });
+}
+
 export function useMailboxDetails(mailboxId: string | undefined) {
   return useQuery<MailboxDetails>({
     queryKey: ["mailbox-details", mailboxId],

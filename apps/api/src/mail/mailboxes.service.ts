@@ -541,6 +541,80 @@ export class MailboxesService {
     return { ok: true };
   }
 
+  async revealCredential(workspaceId: string, mailboxId: string) {
+    const mailbox = await this.getOrThrow(workspaceId, mailboxId);
+    if (!mailbox.credential) {
+      throw new NotFoundException('Mailbox sem credenciais. Gere uma nova.');
+    }
+    const password = this.crypto.decrypt(mailbox.credential.secretRef);
+    const storedUsername = mailbox.credential.username?.trim() || '';
+    const username = storedUsername.includes('@') ? storedUsername : mailbox.address;
+    return {
+      username,
+      password,
+      rotatedAt: mailbox.credential.rotatedAt,
+      createdAt: mailbox.credential.createdAt,
+    };
+  }
+
+  async regenerateCredential(workspaceId: string, mailboxId: string, actor: string) {
+    const mailbox = await this.getOrThrow(workspaceId, mailboxId);
+    const creds = this.managementCreds();
+    if (!creds) {
+      throw new BadRequestException(
+        'Credenciais de management do Stalwart não configuradas (STALWART_MANAGEMENT_*).',
+      );
+    }
+    // Cria uma nova app-password na Stalwart (anteriores continuam válidas até o admin
+    // as remover; isto permite uma janela curta sem queda do serviço).
+    const principalName = mailbox.address.split('@')[0] || mailbox.address;
+    const { secret, accountId } = await this.ensureStalwartMailboxSecret(
+      creds,
+      mailbox.address,
+      principalName,
+      mailbox.displayName ?? undefined,
+      null,
+    );
+    const secretRef = this.crypto.encrypt(secret);
+    if (mailbox.credentialId) {
+      await this.prisma.mailCredential.update({
+        where: { id: mailbox.credentialId },
+        data: {
+          secretRef,
+          username: mailbox.address,
+          rotatedAt: new Date(),
+        },
+      });
+    } else {
+      const cred = await this.prisma.mailCredential.create({
+        data: {
+          mailboxId: mailbox.id,
+          kind: MailCredentialKind.APP_PASSWORD,
+          secretRef,
+          username: mailbox.address,
+        },
+      });
+      await this.prisma.mailbox.update({
+        where: { id: mailbox.id },
+        data: { credentialId: cred.id, stalwartAccountId: accountId },
+      });
+    }
+    await this.prisma.auditLog.create({
+      data: {
+        workspaceId,
+        actor,
+        action: 'mailbox.credentials.regenerated',
+        subjectType: 'Mailbox',
+        subjectId: mailbox.id,
+        data: {},
+      },
+    });
+    this.log.log(
+      `${c.green}🔁${c.reset} credencial regenerada via Stalwart para ${c.magenta}${mailbox.address}${c.reset}`,
+    );
+    return { username: mailbox.address, password: secret };
+  }
+
   async invalidateCredential(
     workspaceId: string,
     mailboxId: string,

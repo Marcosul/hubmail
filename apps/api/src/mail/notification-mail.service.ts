@@ -75,13 +75,31 @@ export class NotificationMailService {
     const port = Number(this.config.get<string>('NOTIFICATION_SMTP_PORT') ?? 587);
     const user = this.config.get<string>('NOTIFICATION_SMTP_USER');
     const pass = this.config.get<string>('NOTIFICATION_SMTP_PASS');
+    const secureRaw = this.config.get<string>('NOTIFICATION_SMTP_SECURE');
+    // Por defeito: implicit TLS para 465, STARTTLS para 587. Pode ser forçado via env.
+    const secure =
+      secureRaw === undefined || secureRaw === ''
+        ? port === 465
+        : ['1', 'true', 'yes', 'on'].includes(secureRaw.toLowerCase());
+    const ignoreTLS = this.config.get<string>('NOTIFICATION_SMTP_IGNORE_TLS') === 'true';
+    const requireTLS = this.config.get<string>('NOTIFICATION_SMTP_REQUIRE_TLS') === 'true';
+    const tlsRejectUnauthorized =
+      this.config.get<string>('NOTIFICATION_SMTP_TLS_REJECT_UNAUTHORIZED') !== 'false';
 
     if (!host || !user || !pass) {
       this.log.warn('NOTIFICATION_SMTP_* não configurado — emails transacionais desativados');
       return null;
     }
 
-    return createTransport({ host, port, secure: port === 465, auth: { user, pass } });
+    return createTransport({
+      host,
+      port,
+      secure,
+      ignoreTLS,
+      requireTLS,
+      auth: { user, pass },
+      tls: { rejectUnauthorized: tlsRejectUnauthorized, servername: host },
+    });
   }
 
   async sendWorkspaceInvite(opts: {
@@ -150,14 +168,33 @@ export class NotificationMailService {
   }
 
   private async deliver(to: string, subject: string, html: string) {
-    const transport = this.transport();
-    if (!transport) return;
     const from = this.config.get<string>('NOTIFICATION_SMTP_FROM') ?? DEFAULT_FROM;
-    try {
-      await transport.sendMail({ from, to, subject, html });
-      this.log.log(`email transacional enviado → ${to} | ${subject.slice(0, 60)}`);
-    } catch (err) {
-      this.log.error(`falha ao enviar email para ${to}: ${String(err)}`);
+    // Stalwart no nosso load-balancer ocasionalmente devolve "wrong version number"
+    // — fazemos até 3 tentativas com transport novo em cada, antes de desistir.
+    const maxAttempts = 3;
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const transport = this.transport();
+      if (!transport) return;
+      try {
+        await transport.sendMail({ from, to, subject, html });
+        this.log.log(
+          `email transacional enviado → ${to} | ${subject.slice(0, 60)} (attempt ${attempt})`,
+        );
+        return;
+      } catch (err) {
+        lastErr = err;
+        const msg = String(err);
+        const transient =
+          msg.includes('wrong version number') ||
+          msg.includes('Greeting never received') ||
+          msg.includes('ECONNRESET') ||
+          msg.includes('ETIMEDOUT');
+        if (!transient || attempt === maxAttempts) break;
+        this.log.warn(`SMTP tentativa ${attempt} falhou (transitório), retry…`);
+        await new Promise((r) => setTimeout(r, 250 * attempt));
+      }
     }
+    this.log.error(`falha ao enviar email para ${to}: ${String(lastErr)}`);
   }
 }

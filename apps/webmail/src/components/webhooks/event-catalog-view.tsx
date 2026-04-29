@@ -6,101 +6,7 @@ import type { WebhookCatalogItem } from "@hubmail/types";
 import { useI18n } from "@/i18n/client";
 import { useWebhookCatalog } from "@/hooks/use-webhooks";
 import { cn } from "@/lib/utils";
-
-const EXAMPLES: Record<string, Record<string, unknown>> = {
-  "domain.verified": {
-    domain: {
-      domain_id: "string",
-      name: "string",
-      status: "VERIFIED",
-      created_at: "2026-04-28T10:00:00.000Z",
-      updated_at: "2026-04-28T10:00:00.000Z",
-    },
-    event_id: "string",
-    event_type: "domain.verified",
-    type: "event",
-  },
-  "message.received": {
-    event_id: "string",
-    event_type: "message.received",
-    type: "event",
-    message: {
-      message_id: "string",
-      inbox_id: "string",
-      from: "string",
-      to: ["string"],
-      subject: "string",
-      timestamp: "2026-04-28T10:00:00.000Z",
-    },
-  },
-  "message.sent": {
-    event_id: "string",
-    event_type: "message.sent",
-    type: "event",
-    send: {
-      message_id: "string",
-      inbox_id: "string",
-      recipients: ["string"],
-      timestamp: "2026-04-28T10:00:00.000Z",
-    },
-  },
-  "message.delivered": {
-    event_id: "string",
-    event_type: "message.delivered",
-    type: "event",
-    delivery: {
-      message_id: "string",
-      inbox_id: "string",
-      recipients: ["string"],
-      timestamp: "2026-04-28T10:00:00.000Z",
-    },
-  },
-  "message.bounced": {
-    event_id: "string",
-    event_type: "message.bounced",
-    type: "event",
-    bounce: {
-      message_id: "string",
-      inbox_id: "string",
-      recipients: [{ address: "string", status: "string" }],
-      timestamp: "2026-04-28T10:00:00.000Z",
-    },
-  },
-  "message.complained": {
-    event_id: "string",
-    event_type: "message.complained",
-    type: "event",
-    complaint: {
-      message_id: "string",
-      inbox_id: "string",
-      recipients: ["string"],
-      timestamp: "2026-04-28T10:00:00.000Z",
-    },
-  },
-  "message.rejected": {
-    event_id: "string",
-    event_type: "message.rejected",
-    type: "event",
-    reject: {
-      message_id: "string",
-      inbox_id: "string",
-      reason: "string",
-      timestamp: "2026-04-28T10:00:00.000Z",
-    },
-  },
-  "message.received.blocked": {
-    event_id: "string",
-    event_type: "message.received.blocked",
-    type: "event",
-    message: { message_id: "string", inbox_id: "string", from: "string", to: ["string"] },
-  },
-  "message.received.spam": {
-    event_id: "string",
-    event_type: "message.received.spam",
-    type: "event",
-    message: { message_id: "string", inbox_id: "string", from: "string", to: ["string"] },
-  },
-};
+import { getWebhookSample } from "@/lib/webhook-samples";
 
 interface Group {
   label: string;
@@ -232,7 +138,7 @@ export function EventCatalogView() {
             </summary>
             <div className="border-t border-neutral-200 p-4 dark:border-hub-border">
               <pre className="overflow-auto rounded bg-neutral-900 p-3 text-xs text-neutral-100">
-                {JSON.stringify(EXAMPLES[it.name] ?? { event_type: it.name }, null, 2)}
+                {JSON.stringify(getWebhookSample(it.name), null, 2)}
               </pre>
             </div>
           </details>

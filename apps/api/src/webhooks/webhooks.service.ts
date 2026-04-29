@@ -5,6 +5,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateWebhookDto, UpdateWebhookDto } from './dto/webhook.dto';
 import { StalwartWebhooksAdapter } from './stalwart-webhooks.helper';
 import { WebhookDispatcherService } from './webhook-dispatcher.service';
+import { WEBHOOK_EVENT_PUBLIC_NAME } from './webhook-events.constants';
+import { buildTestPayload } from './sample-payloads';
 
 function generateSecret(): string {
   return `whsec_${randomBytes(24).toString('base64url')}`;
@@ -359,21 +361,31 @@ export class WebhooksService {
     const w = await this.prisma.webhook.findFirst({ where: { id: webhookId, workspaceId } });
     if (!w) throw new NotFoundException('Webhook não encontrado');
 
-    const samplePayload: Record<string, unknown> = {
-      test: true,
-      send: {
-        message_id: `test-${Date.now()}`,
-        inbox_id: null,
-        recipients: ['test@example.com'],
-        timestamp: new Date().toISOString(),
-      },
-    };
+    const now = new Date();
+    const messageId = `test-${now.getTime()}`;
+
+    // Resolve um inbox alvo para preencher inbox_id/address se houver escopo.
+    const inboxId = w.inboxIds[0] ?? null;
+    const inbox = inboxId
+      ? await this.prisma.mailbox.findUnique({
+          where: { id: inboxId },
+          select: { id: true, address: true },
+        })
+      : null;
+
+    const samplePayload = buildTestPayload(eventType, {
+      messageId,
+      inboxId: inbox?.id ?? null,
+      inboxAddress: inbox?.address ?? null,
+      workspaceId,
+      now,
+    });
 
     const event = await this.prisma.webhookEvent.create({
       data: {
         workspaceId,
         eventType,
-        messageId: `test-${Date.now()}`,
+        messageId,
         payload: samplePayload as never,
       },
     });
@@ -382,7 +394,7 @@ export class WebhooksService {
     void this.dispatcher
       .deliverSingle(w.id, w.url, w.secret, event.id, {
         event_id: event.id,
-        event_type: eventType,
+        event_type: WEBHOOK_EVENT_PUBLIC_NAME[eventType],
         type: 'event',
         ...samplePayload,
       })

@@ -106,6 +106,25 @@ export class MailboxesController {
     );
   }
 
+  @Get(':id/credential')
+  @ApiOperation({ summary: 'Revela a app-password guardada (decifrada)' })
+  reveal(
+    @CurrentWorkspace() ws: WorkspaceContext,
+    @Param('id') mailboxId: string,
+  ) {
+    return this.service.revealCredential(ws.workspaceId, mailboxId);
+  }
+
+  @Post(':id/credential/regenerate')
+  @ApiOperation({ summary: 'Gera nova app-password via Stalwart e guarda cifrada' })
+  regenerate(
+    @CurrentWorkspace() ws: WorkspaceContext,
+    @CurrentUser() user: User,
+    @Param('id') mailboxId: string,
+  ) {
+    return this.service.regenerateCredential(ws.workspaceId, mailboxId, user.id);
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: 'Remove mailbox (apenas metadata; a conta Stalwart permanece)' })
   remove(
