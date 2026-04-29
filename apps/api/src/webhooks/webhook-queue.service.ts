@@ -74,15 +74,17 @@ export class WebhookQueueService implements OnModuleInit, OnModuleDestroy {
 
       // Event listeners
       this.worker.on('completed', (job) => {
-        this.jobProcessing.delete(job.id);
-        this.log.debug(`Job ${job.id} completed`);
+        if (job?.id) this.jobProcessing.delete(job.id);
+        if (job?.id) this.log.debug(`Job ${job.id} completed`);
       });
 
       this.worker.on('failed', (job, err) => {
-        this.jobProcessing.delete(job.id);
-        this.log.error(
-          `Job ${job.id} failed (attempt ${job.attemptsMade}/${job.opts.attempts}): ${err.message}`,
-        );
+        if (job?.id) this.jobProcessing.delete(job.id);
+        if (job?.id) {
+          this.log.error(
+            `Job ${job.id} failed (attempt ${job.attemptsMade}/${job.opts.attempts}): ${err.message}`,
+          );
+        }
       });
 
       this.log.log('✓ Webhook queue initialized with Redis');
@@ -280,7 +282,7 @@ export class WebhookQueueService implements OnModuleInit, OnModuleDestroy {
    */
   async clearFailedJobs() {
     if (!this.queue) return;
-    await this.queue.clean(0, 'failed');
-    this.log.log('Failed jobs cleared from queue');
+    const removed = await this.queue.clean(0, 100, 'failed');
+    this.log.log(`${removed.length} failed jobs cleared from queue`);
   }
 }
