@@ -579,7 +579,9 @@ export class JmapClient {
         `[jmap.downloadBlob] ${res.status} url=${url} blobId=${blobId} accountId=${accountId} responseBody=${text.slice(0, 500)}`,
       );
       this.log.error(`${c.red}❌ JMAP download falhou (${res.status}):${c.reset} ${text}`);
-      throw new BadGatewayException(`JMAP download falhou: ${res.status}`);
+      throw new BadGatewayException(
+        `JMAP download falhou: ${res.status} url=${url} body=${text.slice(0, 200)}`,
+      );
     }
     return {
       stream: res.body,
