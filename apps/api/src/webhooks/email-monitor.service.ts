@@ -32,10 +32,28 @@ export class EmailMonitorService {
     inboxesScanned: number;
     newEmails: number;
     errors: string[];
+    details: Array<{
+      inboxId: string;
+      address?: string;
+      jmapEmailsReturned: number;
+      drafts: number;
+      sent: number;
+      alreadySeen: number;
+      newEmails: number;
+    }>;
   }> {
     const errors: string[] = [];
     let newEmails = 0;
     const inboxesScanned = new Set<string>();
+    const details: Array<{
+      inboxId: string;
+      address?: string;
+      jmapEmailsReturned: number;
+      drafts: number;
+      sent: number;
+      alreadySeen: number;
+      newEmails: number;
+    }> = [];
 
     try {
       const webhooks = await this.prisma.webhook.findMany({
@@ -77,13 +95,22 @@ export class EmailMonitorService {
 
       for (const [inboxId, workspaceId] of inboxToWorkspace) {
         try {
-          const count = await this.checkInboxForNewEmails(workspaceId, inboxId);
+          const detail = await this.checkInboxForNewEmails(workspaceId, inboxId);
           inboxesScanned.add(inboxId);
-          newEmails += count;
+          newEmails += detail.newEmails;
+          details.push({ inboxId, ...detail });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           errors.push(`inbox ${inboxId}: ${message}`);
           this.log.error(`Error scanning inbox ${inboxId}: ${message}`);
+          details.push({
+            inboxId,
+            jmapEmailsReturned: 0,
+            drafts: 0,
+            sent: 0,
+            alreadySeen: 0,
+            newEmails: 0,
+          });
         }
       }
     } catch (err) {
@@ -100,13 +127,21 @@ export class EmailMonitorService {
       inboxesScanned: inboxesScanned.size,
       newEmails,
       errors,
+      details,
     };
   }
 
   private async checkInboxForNewEmails(
     workspaceId: string,
     inboxId: string,
-  ): Promise<number> {
+  ): Promise<{
+    address?: string;
+    jmapEmailsReturned: number;
+    drafts: number;
+    sent: number;
+    alreadySeen: number;
+    newEmails: number;
+  }> {
     const { mailbox, credentials } = await this.mailboxes.resolveCredentials(
       workspaceId,
       inboxId,
@@ -119,21 +154,29 @@ export class EmailMonitorService {
       limit: 50,
     });
 
+    const stats = {
+      address: mailbox.address,
+      jmapEmailsReturned: result.emails?.length ?? 0,
+      drafts: 0,
+      sent: 0,
+      alreadySeen: 0,
+      newEmails: 0,
+    };
+
     if (!result.emails || result.emails.length === 0) {
-      return 0;
+      return stats;
     }
 
-    let newCount = 0;
-
     for (const email of result.emails) {
-      // Skip drafts (keyword $draft) — only trigger for received messages
-      if (email.keywords?.['$draft']) continue;
+      if (email.keywords?.['$draft']) {
+        stats.drafts += 1;
+        continue;
+      }
+      if (email.keywords?.['$sent']) {
+        stats.sent += 1;
+        continue;
+      }
 
-      // Skip outgoing/sent (keyword $sent) — those have their own webhook (MESSAGE_SENT)
-      if (email.keywords?.['$sent']) continue;
-
-      // Try to insert into message_index. If unique constraint fails, email
-      // was already seen — skip. If insert succeeds, email is new.
       try {
         await this.prisma.messageIndex.create({
           data: {
@@ -148,7 +191,6 @@ export class EmailMonitorService {
           },
         });
 
-        // Insert succeeded — this is a new email. Enqueue webhook event.
         await this.queueService.enqueueEmailEvent({
           inboxId,
           emailId: email.id,
@@ -158,27 +200,26 @@ export class EmailMonitorService {
           createdAt: new Date(email.receivedAt),
         });
 
-        newCount += 1;
+        stats.newEmails += 1;
         this.log.log(
-          `📧 New email detected in ${mailbox.address}: ${email.subject ?? '(no subject)'} (${email.id})`,
+          `📧 New email in ${mailbox.address}: ${email.subject ?? '(no subject)'} (${email.id})`,
         );
       } catch (err) {
-        // Unique constraint violation = already seen, skip silently
         const message = err instanceof Error ? err.message : String(err);
         if (
           message.includes('Unique constraint') ||
           message.includes('P2002') ||
           message.includes('duplicate key')
         ) {
+          stats.alreadySeen += 1;
           continue;
         }
-        // Other error — log but don't abort the scan
         this.log.warn(
           `Failed to record email ${email.id} in ${inboxId}: ${message}`,
         );
       }
     }
 
-    return newCount;
+    return stats;
   }
 }
