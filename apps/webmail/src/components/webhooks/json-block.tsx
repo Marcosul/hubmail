@@ -34,9 +34,11 @@ interface Props {
   title?: string;
   value: unknown;
   className?: string;
+  /** Tailwind max-height class for the scroll area. Defaults to "max-h-80". */
+  maxHeightClass?: string;
 }
 
-export function JsonBlock({ title, value, className }: Props) {
+export function JsonBlock({ title, value, className, maxHeightClass = "max-h-80" }: Props) {
   const html = useMemo(() => highlightJson(value), [value]);
   const text = useMemo(() => JSON.stringify(value, null, 2) ?? "", [value]);
   const [copied, setCopied] = useState(false);
@@ -68,7 +70,7 @@ export function JsonBlock({ title, value, className }: Props) {
           {copied ? "Copiado" : "Copiar"}
         </button>
       </div>
-      <pre className="max-h-80 flex-1 overflow-y-auto p-3 leading-relaxed">
+      <pre className={`${maxHeightClass} flex-1 overflow-y-auto p-3 leading-relaxed`}>
         <code dangerouslySetInnerHTML={{ __html: html }} />
       </pre>
     </div>

@@ -140,6 +140,10 @@ export function useWebhookEvents(filter?: { eventType?: WebhookEventType; limit?
   return useQuery<WebhookEventSummary[]>({
     queryKey: [...EVENTS_KEY, qs],
     queryFn: () => apiRequest<WebhookEventSummary[]>(`/api/webhooks/events${qs ? `?${qs}` : ""}`),
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: "always",
+    staleTime: 0,
   });
 }
 

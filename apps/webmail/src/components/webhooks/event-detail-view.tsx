@@ -1,17 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 import { useI18n } from "@/i18n/client";
 import { useWebhookEvent } from "@/hooks/use-webhooks";
 import { WEBHOOK_EVENT_PUBLIC_NAME } from "@hubmail/types";
 import { WebhookAttemptsTable } from "./webhook-attempts-table";
+import { JsonBlock } from "./json-block";
 
 export function EventDetailView({ id }: { id: string }) {
   const { messages, locale } = useI18n();
   const copy = messages.webhooks.logs;
   const { data, isLoading } = useWebhookEvent(id);
-  const [raw, setRaw] = useState(false);
 
   if (isLoading || !data) {
     return <p className="text-sm text-neutral-500">{messages.common.loading}</p>;
@@ -43,20 +42,21 @@ export function EventDetailView({ id }: { id: string }) {
         </div>
       </div>
 
-      <section className="rounded-lg border border-neutral-200 dark:border-hub-border">
-        <header className="flex items-center justify-between border-b border-neutral-200 px-4 py-2 text-sm dark:border-hub-border">
-          <span className="font-semibold">{copy.messageContent}</span>
-          <label className="flex items-center gap-2 text-xs">
-            {copy.raw}
-            <input type="checkbox" checked={raw} onChange={(e) => setRaw(e.target.checked)} />
-          </label>
-        </header>
-        <pre className="overflow-auto p-4 text-xs">
-          {raw ? JSON.stringify(fullPayload) : JSON.stringify(fullPayload, null, 2)}
-        </pre>
-      </section>
-
-      <WebhookAttemptsTable attempts={data.attempts} />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="min-w-0">
+          <WebhookAttemptsTable attempts={data.attempts} />
+        </div>
+        <div className="min-w-0 space-y-2">
+          <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+            {copy.messageContent}
+          </h3>
+          <JsonBlock
+            title={copy.messageContent}
+            value={fullPayload}
+            maxHeightClass="max-h-[700px]"
+          />
+        </div>
+      </div>
     </div>
   );
 }
