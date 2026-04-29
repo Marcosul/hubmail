@@ -7,6 +7,9 @@ import { useI18n } from "@/i18n/client";
 import { useWebhookCatalog } from "@/hooks/use-webhooks";
 import { cn } from "@/lib/utils";
 import { getWebhookSample } from "@/lib/webhook-samples";
+import { getWebhookSchema } from "@/lib/webhook-schemas";
+import { JsonBlock } from "./json-block";
+import { SchemaTree } from "./schema-tree";
 
 interface Group {
   label: string;
@@ -136,10 +139,17 @@ export function EventCatalogView() {
             <summary className="cursor-pointer px-4 py-3 font-mono text-sm font-semibold">
               {it.name}
             </summary>
-            <div className="border-t border-neutral-200 p-4 dark:border-hub-border">
-              <pre className="overflow-auto rounded bg-neutral-900 p-3 text-xs text-neutral-100">
-                {JSON.stringify(getWebhookSample(it.name), null, 2)}
-              </pre>
+            <div className="grid gap-3 border-t border-neutral-200 p-4 md:grid-cols-2 dark:border-hub-border">
+              <div>
+                <h4 className="mb-1 text-xs font-semibold uppercase text-neutral-500">Schema</h4>
+                <SchemaTree fields={getWebhookSchema(it.name)} />
+              </div>
+              <div>
+                <h4 className="mb-1 text-xs font-semibold uppercase text-neutral-500">
+                  Example {it.name}
+                </h4>
+                <JsonBlock title={`Example ${it.name}`} value={getWebhookSample(it.name)} />
+              </div>
             </div>
           </details>
         ))}

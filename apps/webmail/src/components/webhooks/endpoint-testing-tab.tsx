@@ -5,6 +5,9 @@ import { Send } from "lucide-react";
 import type { WebhookEventType } from "@hubmail/types";
 import { useTestWebhook, useWebhookCatalog } from "@/hooks/use-webhooks";
 import { getWebhookSample } from "@/lib/webhook-samples";
+import { getWebhookSchema } from "@/lib/webhook-schemas";
+import { JsonBlock } from "./json-block";
+import { SchemaTree } from "./schema-tree";
 
 export function EndpointTestingTab({ webhookId }: { webhookId: string }) {
   const { data: catalog } = useWebhookCatalog();
@@ -13,7 +16,9 @@ export function EndpointTestingTab({ webhookId }: { webhookId: string }) {
   const [result, setResult] = useState<string | null>(null);
 
   const selectedItem = catalog?.find((c) => c.type === eventType);
-  const example = getWebhookSample(selectedItem?.name ?? "");
+  const eventName = selectedItem?.name ?? "";
+  const example = getWebhookSample(eventName);
+  const schema = getWebhookSchema(eventName);
 
   const onSend = async () => {
     setResult(null);
@@ -58,17 +63,13 @@ export function EndpointTestingTab({ webhookId }: { webhookId: string }) {
           <div className="grid gap-3 md:grid-cols-2">
             <div>
               <h4 className="mb-1 text-xs font-semibold uppercase text-neutral-500">Schema</h4>
-              <pre className="overflow-auto rounded bg-neutral-50 p-3 text-xs dark:bg-white/5">
-                {JSON.stringify(example, null, 2)}
-              </pre>
+              <SchemaTree fields={schema} />
             </div>
             <div>
               <h4 className="mb-1 text-xs font-semibold uppercase text-neutral-500">
-                Example {selectedItem?.name}
+                Example {eventName}
               </h4>
-              <pre className="overflow-auto rounded bg-neutral-900 p-3 text-xs text-neutral-100">
-                {JSON.stringify(example, null, 2)}
-              </pre>
+              <JsonBlock title={`Example ${eventName}`} value={example} />
             </div>
           </div>
 
